@@ -1,13 +1,14 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { anyApi } from "convex/server";
 import { useMutation, useQuery } from "convex/react";
+import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Svg, { Path } from "react-native-svg";
 import {
   Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
   Text, TextInput, View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 type Note = {
   _id: string;
@@ -91,6 +92,7 @@ function NotesExperience({
   remove: (id: string) => void | Promise<unknown>;
   loading: boolean;
 }) {
+  const insets = useSafeAreaInsets();
   const [search, setSearch] = useState("");
   const [active, setActive] = useState<Note | null>(null);
   const [saving, setSaving] = useState(false);
@@ -140,15 +142,20 @@ function NotesExperience({
     ]);
   };
 
-  if (active) return <Editor note={active} saving={saving} onChange={updateActive} onClose={closeEditor} onDelete={deleteNote} />;
+  if (active) return <>
+    <StatusBar style="dark" />
+    <Editor note={active} saving={saving} onChange={updateActive} onClose={closeEditor} onDelete={deleteNote} />
+  </>;
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
-      <View style={styles.homeHeader}>
+    <SafeAreaView style={[styles.safe, styles.homeRoot]} edges={["left", "right"]}>
+      <StatusBar style="light" />
+      <View style={[styles.homeHeader, { paddingTop: insets.top + 8 }]}>
         <View style={styles.brandLine}><View style={styles.brandMark}><View style={styles.brandMarkInner} /></View><Text style={styles.brand}>noted</Text><View style={styles.brandDot} /></View>
         <Text style={styles.homeTitle}>Your notes<Text style={styles.titleDot}>.</Text></Text>
         <Text style={styles.homeSubtitle}>A little space for everything on your mind.</Text>
       </View>
+      <View style={styles.homeBody}>
       <View style={styles.searchWrap}>
         <Text style={styles.searchIcon}>⌕</Text>
         <TextInput value={search} onChangeText={setSearch} placeholder="Find a note" placeholderTextColor="#98A3B6" style={styles.searchInput} returnKeyType="search" />
@@ -172,6 +179,7 @@ function NotesExperience({
       </ScrollView>
       {notes.length > 0 && <Pressable style={({ pressed }) => [styles.fab, pressed && styles.pressed]} onPress={createNote} accessibilityLabel="Create a note"><Text style={styles.fabPlus}>+</Text></Pressable>}
       {busy && <View style={styles.busyVeil}><Text style={styles.busyText}>Opening a fresh page…</Text></View>}
+      </View>
     </SafeAreaView>
   );
 }
@@ -295,6 +303,8 @@ function cardDate(time: number) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.background },
+  homeRoot: { backgroundColor: COLORS.blue },
+  homeBody: { flex: 1, backgroundColor: COLORS.background },
   homeHeader: { backgroundColor: COLORS.blue, paddingHorizontal: 25, paddingTop: 8, paddingBottom: 35, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
   brandLine: { flexDirection: "row", alignItems: "center", marginBottom: 31 },
   brandMark: { width: 23, height: 23, borderRadius: 8, backgroundColor: "white", justifyContent: "center", alignItems: "center", transform: [{ rotate: "-8deg" }] },
