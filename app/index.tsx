@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { anyApi } from "convex/server";
 import { useMutation, useQuery } from "convex/react";
 import { StatusBar } from "expo-status-bar";
+import { Swipeable } from "react-native-gesture-handler";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Svg, { Path } from "react-native-svg";
 import {
@@ -134,13 +135,25 @@ function NotesExperience({
   const handleTogglePin = (id: string) => {
     Promise.resolve(togglePin(id)).catch(() => Alert.alert("Couldn’t update this note", "Check your connection and try again."));
   };
-  const deleteNote = () => {
-    if (!active) return;
+  const requestDelete = (note: Note, afterDelete?: () => void) => {
+    const confirmDelete = async () => {
+      try {
+        await Promise.resolve(remove(note._id));
+        afterDelete?.();
+      } catch {
+        Alert.alert("Couldn’t delete this note", "Check your connection and try again.");
+      }
+    };
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.confirm("Delete this note? This can’t be undone.")) void confirmDelete();
+      return;
+    }
     Alert.alert("Delete this note?", "This can’t be undone.", [
       { text: "Cancel", style: "cancel" },
-      { text: "Delete note", style: "destructive", onPress: () => { void remove(active._id); setActive(null); } },
+      { text: "Delete note", style: "destructive", onPress: () => { void confirmDelete(); } },
     ]);
   };
+  const deleteNote = () => { if (active) requestDelete(active, () => setActive(null)); };
 
   if (active) return <>
     <StatusBar style="dark" />
@@ -173,7 +186,7 @@ function NotesExperience({
           <View style={styles.noResults}><Text style={styles.noResultsTitle}>Nothing found</Text><Text style={styles.noResultsBody}>Try another word or phrase.</Text></View>
         ) : <>
           {filtered.pinned.length > 0 && <PinnedSection notes={filtered.pinned} open={setActive} togglePin={handleTogglePin} />}
-          {filtered.recent.length > 0 && <RecentSection notes={filtered.recent} open={setActive} togglePin={handleTogglePin} divided={filtered.pinned.length > 0} />}
+          {filtered.recent.length > 0 && <RecentSection notes={filtered.recent} open={setActive} togglePin={handleTogglePin} onDelete={requestDelete} divided={filtered.pinned.length > 0} />}
           <Text style={styles.listFootnote}>{notes.length} {notes.length === 1 ? "note" : "notes"} · kept just for you</Text>
         </>}
       </ScrollView>
@@ -247,17 +260,40 @@ function PinnedSection({ notes, open, togglePin }: { notes: Note[]; open: (note:
   </View>;
 }
 
-function RecentSection({ notes, open, togglePin, divided }: { notes: Note[]; open: (note: Note) => void; togglePin: (id: string) => void | Promise<unknown>; divided: boolean }) {
+function RecentSection({ notes, open, togglePin, onDelete, divided }: { notes: Note[]; open: (note: Note) => void; togglePin: (id: string) => void | Promise<unknown>; onDelete: (note: Note) => void; divided: boolean }) {
   return <View style={[styles.section, divided && styles.recentSection]}>
     <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>Recent</Text><Text style={styles.sectionCount}>{String(notes.length).padStart(2, "0")}</Text></View>
-    {notes.map((note) => <View key={note._id} style={styles.noteRow}>
-      <Pressable onPress={() => open(note)} style={({ pressed }) => [styles.noteCopy, pressed && styles.rowPressed]}>
-        <Text numberOfLines={1} style={styles.noteTitle}>{note.title.trim() || "Untitled note"}</Text>
-        <Text numberOfLines={1} style={styles.notePreview}>{note.body.trim() || "A new page, ready when you are."}</Text>
-      </Pressable>
-      <View style={styles.noteMeta}><Text style={styles.noteTime}>{relativeTime(note.updatedAt)}</Text><Pressable onPress={() => togglePin(note._id)} hitSlop={12} accessibilityRole="button" accessibilityLabel="Pin note" style={styles.pinButton}><PinIcon color={COLORS.blue} /></Pressable></View>
-    </View>)}
+    {notes.map((note) => <Swipeable
+      key={note._id}
+      friction={2}
+      leftThreshold={36}
+      rightThreshold={36}
+      overshootLeft={false}
+      overshootRight={false}
+      renderLeftActions={(_, __, swipeable) => <SwipeAction label="Pin" kind="pin" onPress={() => { swipeable.close(); togglePin(note._id); }} />}
+      renderRightActions={(_, __, swipeable) => <SwipeAction label="Delete" kind="delete" onPress={() => { swipeable.close(); onDelete(note); }} />}
+    >
+      <View style={styles.noteRow}>
+        <Pressable onPress={() => open(note)} style={({ pressed }) => [styles.noteCopy, pressed && styles.rowPressed]}>
+          <Text numberOfLines={1} style={styles.noteTitle}>{note.title.trim() || "Untitled note"}</Text>
+          <Text numberOfLines={1} style={styles.notePreview}>{note.body.trim() || "A new page, ready when you are."}</Text>
+        </Pressable>
+        <View style={styles.noteMeta}><Text style={styles.noteTime}>{relativeTime(note.updatedAt)}</Text><Pressable onPress={() => togglePin(note._id)} hitSlop={12} accessibilityRole="button" accessibilityLabel="Pin note" style={styles.pinButton}><PinIcon color={COLORS.blue} /></Pressable></View>
+      </View>
+    </Swipeable>)}
   </View>;
+}
+
+function SwipeAction({ label, kind, onPress }: { label: string; kind: "pin" | "delete"; onPress: () => void }) {
+  return <Pressable
+    onPress={onPress}
+    accessibilityRole="button"
+    accessibilityLabel={`${label} note`}
+    style={[styles.swipeAction, kind === "pin" ? styles.swipePin : styles.swipeDelete]}
+  >
+    {kind === "pin" ? <PinIcon color="white" size={21} /> : <Text style={styles.swipeDeleteGlyph}>×</Text>}
+    <Text style={styles.swipeActionLabel}>{label}</Text>
+  </Pressable>;
 }
 
 function PinIcon({ color, size = 18 }: { color: string; size?: number }) {
@@ -323,6 +359,7 @@ const styles = StyleSheet.create({
   cardTitle: { fontFamily: "serif", fontSize: 22, fontWeight: "600", lineHeight: 27, letterSpacing: -0.4 }, cardPreview: { fontSize: 15, lineHeight: 22, marginTop: 9 }, cardTime: { marginTop: "auto", paddingTop: 12, fontSize: 14, fontWeight: "500" },
   recentSection: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.line, paddingTop: 21, marginTop: 0 },
   noteRow: { minHeight: 82, flexDirection: "row", alignItems: "center", borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line, paddingVertical: 14 }, rowPressed: { opacity: 0.65 }, noteCopy: { flex: 1, paddingRight: 10 }, noteTitle: { color: COLORS.ink, fontSize: 16.5, fontWeight: "600", letterSpacing: -0.25 }, notePreview: { color: COLORS.muted, fontSize: 13.5, lineHeight: 18, marginTop: 5 }, noteMeta: { width: 77, alignItems: "center", flexDirection: "row", justifyContent: "space-between" }, noteTime: { color: "#9AA5B7", fontSize: 11, marginBottom: 2 },
+  swipeAction: { width: 84, alignItems: "center", justifyContent: "center", gap: 5 }, swipePin: { backgroundColor: COLORS.blue }, swipeDelete: { backgroundColor: "#D64A55" }, swipeActionLabel: { color: "white", fontSize: 11, fontWeight: "700" }, swipeDeleteGlyph: { color: "white", fontSize: 26, lineHeight: 26, fontWeight: "300" },
   listFootnote: { textAlign: "center", color: "#A5B0C1", fontSize: 11, marginTop: 0 },
   fab: { position: "absolute", right: 23, bottom: 26, width: 59, height: 59, borderRadius: 21, backgroundColor: COLORS.blue, justifyContent: "center", alignItems: "center", shadowColor: COLORS.blue, shadowOpacity: 0.28, shadowRadius: 13, shadowOffset: { width: 0, height: 6 }, elevation: 6 }, pressed: { opacity: 0.82, transform: [{ scale: 0.97 }] }, fabPlus: { fontSize: 34, fontWeight: "300", color: "white", marginTop: -3 },
   emptyWrap: { flex: 1, minHeight: 510, borderRadius: 24, backgroundColor: COLORS.blue, marginTop: 8, marginHorizontal: -23, paddingHorizontal: 31, paddingTop: 44, paddingBottom: 35, alignItems: "flex-start", justifyContent: "center" },
