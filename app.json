@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "Noted",
+    "slug": "noted",
+    "scheme": "noted",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "plugins": ["expo-router"],
+    "experiments": { "typedRoutes": true },
+    "web": { "bundler": "metro" }
+  }
+}
