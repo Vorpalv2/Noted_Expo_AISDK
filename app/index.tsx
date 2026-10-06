@@ -98,6 +98,13 @@ function NotesExperience({
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
   const editorTranslateX = useRef(new Animated.Value(screenWidth)).current;
+  const homeScrollY = useRef(new Animated.Value(0)).current;
+  const headerCollapse = homeScrollY.interpolate({ inputRange: [0, 130], outputRange: [0, 1], extrapolate: "clamp" });
+  const headerHeight = homeScrollY.interpolate({
+    inputRange: [0, 130],
+    outputRange: [insets.top + 162, insets.top + 83],
+    extrapolate: "clamp",
+  });
   const [search, setSearch] = useState("");
   const [active, setActive] = useState<Note | null>(null);
   const [actionMenu, setActionMenu] = useState<NoteActionMenu | null>(null);
@@ -224,14 +231,34 @@ function NotesExperience({
   const homeScreen = (
     <SafeAreaView style={[styles.safe, styles.homeRoot]} edges={["left", "right"]}>
       <StatusBar style="light" />
-      <View style={[styles.homeHeader, { paddingTop: insets.top + 8 }]}>
-        <View style={styles.brandLine}><View style={styles.brandMark}><View style={styles.brandMarkInner} /></View><Text style={styles.brand}>noted</Text><View style={styles.brandDot} /></View>
-        <Text style={styles.homeTitle}>Your notes<Text style={styles.titleDot}>.</Text></Text>
-        <Text style={styles.homeSubtitle}>A little space for everything on your mind.</Text>
-      </View>
+      <Animated.View style={[styles.homeHeader, {
+        paddingTop: insets.top + 8,
+        paddingBottom: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [35, 14] }),
+        height: headerHeight,
+      }]}>
+        <Animated.View style={[styles.brandLine, { marginBottom: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [31, 8] }) }]}>
+          <View style={styles.brandMark}><View style={styles.brandMarkInner} /></View><Text style={styles.brand}>noted</Text><View style={styles.brandDot} />
+        </Animated.View>
+        <Animated.Text style={[styles.homeTitle, {
+          fontSize: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [37, 24] }),
+          lineHeight: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [43, 30] }),
+          letterSpacing: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [-1.25, -0.5] }),
+        }]}>Your notes<Text style={styles.titleDot}>.</Text></Animated.Text>
+        <Animated.Text style={[styles.homeSubtitle, {
+          opacity: headerCollapse.interpolate({ inputRange: [0, 0.72, 1], outputRange: [1, 0, 0] }),
+          height: headerCollapse.interpolate({ inputRange: [0, 0.72, 1], outputRange: [17, 0, 0] }),
+          marginTop: headerCollapse.interpolate({ inputRange: [0, 0.72, 1], outputRange: [5, 0, 0] }),
+        }]}>A little space for everything on your mind.</Animated.Text>
+      </Animated.View>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.homeBody}>
-      <ScrollView contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <Animated.ScrollView
+        contentContainerStyle={styles.listContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: homeScrollY } } }], { useNativeDriver: false })}
+      >
         {loading ? <View style={styles.loadingState}><Text style={styles.loadingText}>Gathering your thoughts…</Text></View> : notes.length === 0 ? (
           <View style={styles.emptyWrap}>
             <View style={styles.paperArt}><View style={styles.paperShadow} /><View style={styles.paper}><View style={styles.paperFold} /><View style={styles.paperLine} /><View style={[styles.paperLine, { width: "65%" }]} /><View style={[styles.paperLine, { width: "78%" }]} /></View><View style={styles.sparkle}>✳</View></View>
@@ -246,7 +273,7 @@ function NotesExperience({
           {filtered.recent.length > 0 && <RecentSection notes={filtered.recent} open={setActive} togglePin={handleTogglePin} onDelete={requestDelete} showActions={showNoteActions} divided={filtered.pinned.length > 0} />}
           <Text style={styles.listFootnote}>{notes.length} {notes.length === 1 ? "note" : "notes"} · kept just for you</Text>
         </>}
-      </ScrollView>
+      </Animated.ScrollView>
       {notes.length > 0 && <View style={[styles.bottomSearchCreate, { bottom: keyboardVisible ? 12 : insets.bottom + 14 }]}>
         <View style={styles.bottomSearchWrap}>
           <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" style={styles.bottomSearchIcon}>
@@ -525,7 +552,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.background },
   homeRoot: { backgroundColor: COLORS.background },
   homeBody: { flex: 1, backgroundColor: COLORS.background },
-  homeHeader: { backgroundColor: COLORS.blue, paddingHorizontal: 25, paddingTop: 8, paddingBottom: 35, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
+  homeHeader: { backgroundColor: COLORS.blue, paddingHorizontal: 25, paddingTop: 8, paddingBottom: 35, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, overflow: "hidden" },
   brandLine: { flexDirection: "row", alignItems: "center", marginBottom: 31 },
   brandMark: { width: 23, height: 23, borderRadius: 8, backgroundColor: "white", justifyContent: "center", alignItems: "center", transform: [{ rotate: "-8deg" }] },
   brandMarkInner: { width: 11, height: 13, borderWidth: 1.5, borderColor: COLORS.blue, borderRadius: 3, borderTopWidth: 3 },
