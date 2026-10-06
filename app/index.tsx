@@ -100,6 +100,7 @@ function NotesExperience({
   const editorTranslateX = useRef(new Animated.Value(screenWidth)).current;
   const headerProgress = useRef(new Animated.Value(0)).current;
   const nativeHeaderCollapsedRef = useRef(false);
+  const nativeCanCollapseHeaderRef = useRef(false);
   const nativeCanRestoreHeaderRef = useRef(false);
   const lastNativeScrollOffsetRef = useRef(0);
   const [nativeHeaderCollapsed, setNativeHeaderCollapsed] = useState(false);
@@ -244,8 +245,14 @@ function NotesExperience({
       return;
     }
 
-    if (!nativeHeaderCollapsedRef.current && offsetY > 24) {
+    if (
+      !nativeHeaderCollapsedRef.current &&
+      nativeCanCollapseHeaderRef.current &&
+      offsetY > 24 &&
+      offsetY > lastNativeScrollOffsetRef.current + 0.5
+    ) {
       nativeHeaderCollapsedRef.current = true;
+      nativeCanCollapseHeaderRef.current = false;
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setNativeHeaderCollapsed(true);
       Animated.timing(headerProgress, { toValue: 1, duration: 220, useNativeDriver: true }).start();
@@ -269,6 +276,7 @@ function NotesExperience({
     if (Platform.OS === "web") return;
     const offsetY = event.nativeEvent.contentOffset.y;
     lastNativeScrollOffsetRef.current = offsetY;
+    nativeCanCollapseHeaderRef.current = !nativeHeaderCollapsedRef.current;
     nativeCanRestoreHeaderRef.current = nativeHeaderCollapsedRef.current;
     if (nativeHeaderCollapsedRef.current && offsetY <= 2) {
       nativeHeaderCollapsedRef.current = false;
