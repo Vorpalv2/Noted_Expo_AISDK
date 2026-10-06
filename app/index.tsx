@@ -167,6 +167,9 @@ function NotesExperience({
     .hitSlop({ left: 0, width: 28 })
     .activeOffsetX(8)
     .failOffsetY([-18, 18])
+    .onUpdate((event) => {
+      editorTranslateX.setValue(Math.max(0, event.translationX));
+    })
     .onEnd((event) => {
       if (event.translationX > 90) {
         Animated.timing(editorTranslateX, {
