@@ -141,6 +141,9 @@ export default function RichNoteEditor({ noteId, markdown, flushSignal, safeBott
   const [linkText, setLinkText] = useState('');
   const [linkUrl, setLinkUrl] = useState('https://');
   const [activeTools, setActiveTools] = useState<Set<ToolIconName>>(() => new Set());
+  const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
+  const toolbarRail = useRef<HTMLDivElement>(null);
+  const toolbarDragStart = useRef<{ x: number; y: number; left: number } | null>(null);
 
   useEffect(() => {
     if (loadedNote.current === noteId || !editor.current) return;
@@ -193,6 +196,23 @@ export default function RichNoteEditor({ noteId, markdown, flushSignal, safeBott
     editor.current?.focus();
     const selection = window.getSelection();
     if (selection && savedRange.current) { selection.removeAllRanges(); selection.addRange(savedRange.current); }
+  };
+  const startToolbarDrag = (x: number, y: number) => {
+    if (!toolbarRail.current) return;
+    toolbarDragStart.current = { x, y, left: toolbarRail.current.getBoundingClientRect().left };
+  };
+  const updateToolbarDrag = (x: number, y: number) => {
+    const start = toolbarDragStart.current;
+    if (!start) return;
+    const movedX = x - start.x;
+    if (movedX > 120 && Math.abs(y - start.y) < 56 && start.x - start.left < 112) {
+      setToolbarCollapsed(true);
+      toolbarDragStart.current = null;
+    }
+  };
+  const finishToolbarDrag = (x: number, y: number) => {
+    updateToolbarDrag(x, y);
+    toolbarDragStart.current = null;
   };
   const command = (name: string, value?: string, tool?: ToolIconName, toggle = false) => {
     restoreSelection();
@@ -253,9 +273,15 @@ export default function RichNoteEditor({ noteId, markdown, flushSignal, safeBott
       html, body, #root { margin: 0; width: 100%; max-width: 100%; min-width: 0; height: 100%; overflow-x: hidden; background: #f8fafe; }
       * { box-sizing: border-box; }
       .rich-shell { position: relative; width: 100%; max-width: 100%; min-width: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: #34415b; }
-      .toolbar-rail { position: fixed; z-index: 10; left: 16px; right: 16px; bottom: max(8px, ${safeBottom}px); min-width: 0; overflow: hidden; border: 1px solid #e0e6f0; border-radius: 22px; background: rgba(255, 255, 255, .96); box-shadow: 0 8px 25px rgba(18, 39, 83, .14), 0 2px 5px rgba(18, 39, 83, .08); backdrop-filter: blur(16px); }
+      .toolbar-rail { position: fixed; z-index: 10; left: 16px; right: 16px; bottom: max(8px, ${safeBottom}px); display: flex; justify-content: flex-end; min-width: 0; pointer-events: none; }
+      .toolbar-panel { position: relative; width: 100%; min-width: 0; overflow: hidden; border: 1px solid #e0e6f0; border-radius: 22px; background: rgba(255, 255, 255, .96); box-shadow: 0 8px 25px rgba(18, 39, 83, .14), 0 2px 5px rgba(18, 39, 83, .08); backdrop-filter: blur(16px); pointer-events: auto; transition: width 240ms cubic-bezier(.2,.8,.2,1), height 240ms cubic-bezier(.2,.8,.2,1), border-radius 240ms ease; }
+      .toolbar-rail.collapsed .toolbar-panel { width: 56px; height: 56px; border-radius: 28px; }
       .tools { display: flex; width: 100%; min-width: 0; gap: 8px; padding: 8px; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch; touch-action: pan-x; }
       .tools::-webkit-scrollbar { display: none; }
+      .toolbar-rail.collapsed .tools { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 120ms ease, visibility 0s linear 120ms; }
+      .toolbar-reopen { position: absolute; inset: 0; display: grid; place-items: center; width: 100%; height: 100%; padding: 0; border: 0; border-radius: inherit; background: transparent; color: #1749e8; opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
+      .toolbar-rail.collapsed .toolbar-reopen { opacity: 1; pointer-events: auto; }
+      .toolbar-reopen svg { width: 25px; height: 25px; }
       button { font: inherit; cursor: pointer; }
       .tool { flex: none; display: grid; place-items: center; width: 46px; height: 46px; padding: 0; border: 0; border-radius: 16px; background: transparent; color: #53617a; -webkit-tap-highlight-color: transparent; }
       .tool:active { background: #eaf0ff; color: #1749e8; }
@@ -291,10 +317,21 @@ export default function RichNoteEditor({ noteId, markdown, flushSignal, safeBott
       .dialog-actions button { flex: 1; height: 47px; border-radius: 13px; border: 1px solid #e5eaf3; background: white; color: #101d38; font-weight: 700; }
       .dialog-actions .primary { background: #1749e8; color: white; border-color: #1749e8; }
     `}</style>
-    <div className="body-scroll"><div ref={editor} className="editor" contentEditable suppressContentEditableWarning role="textbox" aria-label="Note body" aria-multiline="true" onInput={emitChange} onKeyUp={() => { rememberSelection(); syncActiveTools(); }} onMouseUp={() => { rememberSelection(); syncActiveTools(); }} onTouchEnd={() => { rememberSelection(); syncActiveTools(); }} /></div>
-    <div className="toolbar-rail">
-      <div className="tools" role="toolbar" aria-label="Note formatting">
-        {tools.map((tool) => <button key={tool.title} type="button" className={`tool${activeTools.has(tool.icon) ? ' active' : ''}`} title={tool.title} aria-label={tool.title} aria-pressed={activeTools.has(tool.icon)} onMouseDown={(event) => event.preventDefault()} onClick={tool.action}><ToolIcon name={tool.icon} /></button>)}
+    <div className="body-scroll"><div ref={editor} className="editor" contentEditable suppressContentEditableWarning role="textbox" aria-label="Note body" aria-multiline="true" onInput={() => { emitChange(); syncActiveTools(); }} onKeyUp={() => { rememberSelection(); syncActiveTools(); }} onMouseUp={() => { rememberSelection(); syncActiveTools(); }} onTouchEnd={() => { rememberSelection(); syncActiveTools(); }} /></div>
+    <div ref={toolbarRail} className={`toolbar-rail${toolbarCollapsed ? ' collapsed' : ''}`}
+      onTouchStart={(event) => { const point = event.touches[0]; if (point) startToolbarDrag(point.clientX, point.clientY); }}
+      onTouchMove={(event) => { const point = event.touches[0]; if (point) updateToolbarDrag(point.clientX, point.clientY); }}
+      onTouchEnd={(event) => { const point = event.changedTouches[0]; if (point) finishToolbarDrag(point.clientX, point.clientY); }}
+      onTouchCancel={() => { toolbarDragStart.current = null; }}
+      onMouseDown={(event) => startToolbarDrag(event.clientX, event.clientY)}
+      onMouseMove={(event) => { if (event.buttons === 1) updateToolbarDrag(event.clientX, event.clientY); }}
+      onMouseUp={(event) => finishToolbarDrag(event.clientX, event.clientY)}
+    >
+      <div className="toolbar-panel">
+        <div className="tools" role="toolbar" aria-label="Note formatting">
+          {tools.map((tool) => <button key={tool.title} type="button" className={`tool${activeTools.has(tool.icon) ? ' active' : ''}`} title={tool.title} aria-label={tool.title} aria-pressed={activeTools.has(tool.icon)} onMouseDown={(event) => event.preventDefault()} onClick={tool.action}><ToolIcon name={tool.icon} /></button>)}
+        </div>
+        <button type="button" className="toolbar-reopen" aria-label="Show formatting tools" title="Show formatting tools" onMouseDown={(event) => event.preventDefault()} onClick={() => setToolbarCollapsed(false)}><ToolIcon name="body" /></button>
       </div>
     </div>
     {tableOpen && <div className="veil"><div className="dialog">
