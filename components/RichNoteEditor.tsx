@@ -108,6 +108,30 @@ function markdownFromNode(node: Node): string {
   return children();
 }
 
+type ToolIconName = 'bold' | 'italic' | 'strike' | 'body' | 'title' | 'heading' | 'bullets' | 'numbered' | 'checklist' | 'quote' | 'code' | 'link' | 'divider' | 'table';
+
+function ToolIcon({ name }: { name: ToolIconName }) {
+  const shared = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+  let drawing;
+  switch (name) {
+    case 'bold': drawing = <path {...shared} d="M7 4.5h5.7a3.2 3.2 0 0 1 0 6.4H7zm0 6.4h6.4a3.3 3.3 0 0 1 0 6.6H7z" />; break;
+    case 'italic': drawing = <path {...shared} d="M14.8 4.5h-5m4.4 0L9.8 17.5m4.4 0h-5" />; break;
+    case 'strike': drawing = <><path {...shared} d="M7 7.2c.7-1.8 2.2-2.7 4.4-2.7 2.3 0 3.8 1.1 3.8 2.8 0 1.2-.7 2-1.8 2.7M7 16.8c.8.8 2.1 1.2 3.8 1.2 2.6 0 4.2-1 4.2-2.8 0-1.1-.7-1.9-1.9-2.5"/><path {...shared} d="M4 12h16"/></>; break;
+    case 'body': drawing = <><path {...shared} d="M5 6h14M5 10h14M5 14h9M5 18h9"/><path {...shared} d="m17 15 2 4 2-4"/></>; break;
+    case 'title': drawing = <><path {...shared} d="M5 5v14M19 5v14M5 12h14"/><path {...shared} d="M5 7h3M16 7h3"/></>; break;
+    case 'heading': drawing = <><path {...shared} d="M5 5v14M12 5v14M5 12h7M16 8h4M18 8v11M16.5 19h3"/></>; break;
+    case 'bullets': drawing = <><circle {...shared} cx="5" cy="6" r="1"/><circle {...shared} cx="5" cy="12" r="1"/><circle {...shared} cx="5" cy="18" r="1"/><path {...shared} d="M10 6h9M10 12h9M10 18h9"/></>; break;
+    case 'numbered': drawing = <><path {...shared} d="M10 6h9M10 12h9M10 18h9M4 5h2v3M4 11h2l-2 2h2M4 17c0-1 2-1 2 0s-2 1-2 2h2"/></>; break;
+    case 'checklist': drawing = <><rect {...shared} x="3.5" y="4" width="5" height="5" rx="1"/><path {...shared} d="m4.5 6.5 1.2 1.2 2-2.3M11.5 6.5H20"/><rect {...shared} x="3.5" y="14" width="5" height="5" rx="1"/><path {...shared} d="M11.5 16.5H20"/></>; break;
+    case 'quote': drawing = <><path {...shared} d="M10.5 6H6a2 2 0 0 0-2 2v4h6v6H4M20 6h-4.5a2 2 0 0 0-2 2v4h6v6h-6"/></>; break;
+    case 'code': drawing = <><path {...shared} d="m8 6-5 6 5 6M16 6l5 6-5 6M14 4l-4 16"/></>; break;
+    case 'link': drawing = <><path {...shared} d="M9.5 14.5 14.5 9.5"/><path {...shared} d="M7.8 16.2 6.4 17.6a3.4 3.4 0 0 1-4.8-4.8l4-4a3.4 3.4 0 0 1 4.8 0M16.2 7.8l1.4-1.4a3.4 3.4 0 1 1 4.8 4.8l-4 4a3.4 3.4 0 0 1-4.8 0"/></>; break;
+    case 'divider': drawing = <><path {...shared} d="M4 12h5M15 12h5M9 8l3 4-3 4M15 8l-3 4 3 4"/></>; break;
+    case 'table': drawing = <><rect {...shared} x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path {...shared} d="M3.5 10h17M9 4.5v15M15 4.5v15"/></>; break;
+  }
+  return <svg aria-hidden="true" viewBox="0 0 24 24" width="21" height="21" {...shared}>{drawing}</svg>;
+}
+
 export default function RichNoteEditor({ noteId, markdown, onChange, onFinish, ref }: Props) {
   const editor = useRef<HTMLDivElement>(null);
   const savedRange = useRef<Range | null>(null);
@@ -163,35 +187,36 @@ export default function RichNoteEditor({ noteId, markdown, onChange, onFinish, r
     setLinkOpen(false);
     emitChange();
   };
-  const tools: { label: string; title: string; action: () => void }[] = [
-    { label: 'B', title: 'Bold', action: () => command('bold') },
-    { label: 'I', title: 'Italic', action: () => command('italic') },
-    { label: 'S̶', title: 'Strikethrough', action: () => command('strikeThrough') },
-    { label: 'Aa', title: 'Body text', action: () => command('formatBlock', 'p') },
-    { label: 'H1', title: 'Large heading', action: () => command('formatBlock', 'h1') },
-    { label: 'H2', title: 'Heading', action: () => command('formatBlock', 'h2') },
-    { label: '•', title: 'Bullet list', action: () => command('insertUnorderedList') },
-    { label: '1.', title: 'Numbered list', action: () => command('insertOrderedList') },
-    { label: '☐', title: 'Checklist', action: () => command('insertHTML', '<ul><li>☐ &nbsp;</li></ul><p><br></p>') },
-    { label: '❞', title: 'Quote', action: () => command('formatBlock', 'blockquote') },
-    { label: '</>', title: 'Code', action: () => command('insertHTML', '<code>code</code>') },
-    { label: 'Link', title: 'Insert link', action: () => { rememberSelection(); setLinkText(window.getSelection()?.toString() ?? ''); setLinkOpen(true); } },
-    { label: '—', title: 'Divider', action: () => command('insertHorizontalRule') },
-    { label: 'Table', title: 'Insert table', action: () => { rememberSelection(); setTableOpen(true); } },
+  const tools: { icon: ToolIconName; title: string; action: () => void }[] = [
+    { icon: 'bold', title: 'Bold', action: () => command('bold') },
+    { icon: 'italic', title: 'Italic', action: () => command('italic') },
+    { icon: 'strike', title: 'Strikethrough', action: () => command('strikeThrough') },
+    { icon: 'body', title: 'Body text', action: () => command('formatBlock', 'p') },
+    { icon: 'title', title: 'Large heading', action: () => command('formatBlock', 'h1') },
+    { icon: 'heading', title: 'Heading', action: () => command('formatBlock', 'h2') },
+    { icon: 'bullets', title: 'Bullet list', action: () => command('insertUnorderedList') },
+    { icon: 'numbered', title: 'Numbered list', action: () => command('insertOrderedList') },
+    { icon: 'checklist', title: 'Checklist', action: () => command('insertHTML', '<ul><li>☐ &nbsp;</li></ul><p><br></p>') },
+    { icon: 'quote', title: 'Quote', action: () => command('formatBlock', 'blockquote') },
+    { icon: 'code', title: 'Code', action: () => command('insertHTML', '<code>code</code>') },
+    { icon: 'link', title: 'Insert link', action: () => { rememberSelection(); setLinkText(window.getSelection()?.toString() ?? ''); setLinkOpen(true); } },
+    { icon: 'divider', title: 'Divider', action: () => command('insertHorizontalRule') },
+    { icon: 'table', title: 'Insert table', action: () => { rememberSelection(); setTableOpen(true); } },
   ];
 
   return <div className="rich-shell">
     <style>{`
       html, body, #root { margin: 0; width: 100%; max-width: 100%; min-width: 0; height: 100%; overflow-x: hidden; background: #f8fafe; }
       * { box-sizing: border-box; }
-      .rich-shell { width: 100%; max-width: 100%; min-width: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: #34415b; }
-      .toolbar-rail { flex: none; width: 100%; min-width: 0; overflow: hidden; border-bottom: 1px solid #e5eaf3; background: #f8fafe; }
-      .tools { display: flex; width: 100%; min-width: 0; gap: 7px; padding: 8px 22px; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch; touch-action: pan-x; }
+      .rich-shell { position: relative; width: 100%; max-width: 100%; min-width: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: #34415b; }
+      .toolbar-rail { position: absolute; z-index: 10; left: 16px; right: 16px; bottom: 12px; min-width: 0; overflow: hidden; border: 1px solid #e0e6f0; border-radius: 22px; background: rgba(255, 255, 255, .96); box-shadow: 0 8px 25px rgba(18, 39, 83, .14), 0 2px 5px rgba(18, 39, 83, .08); backdrop-filter: blur(16px); }
+      .tools { display: flex; width: 100%; min-width: 0; gap: 4px; padding: 6px; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch; touch-action: pan-x; }
       .tools::-webkit-scrollbar { display: none; }
       button { font: inherit; cursor: pointer; }
-      .tool { flex: none; min-width: 37px; height: 34px; padding: 0 10px; border-radius: 9px; border: 1px solid #d9e0ec; background: white; color: #101d38; font-size: 13px; font-weight: 700; }
-      .tool:active { background: #eaf0ff; }
-      .body-scroll { flex: 1; min-width: 0; min-height: 0; width: 100%; overflow-x: hidden; overflow-y: auto; padding: 16px 25px 30px; }
+      .tool { flex: none; display: grid; place-items: center; width: 39px; height: 39px; padding: 0; border: 0; border-radius: 14px; background: transparent; color: #53617a; -webkit-tap-highlight-color: transparent; }
+      .tool:active { background: #eaf0ff; color: #1749e8; }
+      .tool:focus-visible { outline: 2px solid #1749e8; outline-offset: -2px; }
+      .body-scroll { flex: 1; min-width: 0; min-height: 0; width: 100%; overflow-x: hidden; overflow-y: auto; padding: 16px 25px 112px; }
       .editor { width: 100%; min-width: 0; max-width: 100%; min-height: 100%; outline: none; font-size: 17px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
       .editor:empty:before { content: 'Start anywhere…'; color: #a3aec2; }
       .editor p { margin: 0 0 12px; }
@@ -221,12 +246,12 @@ export default function RichNoteEditor({ noteId, markdown, onChange, onFinish, r
       .dialog-actions button { flex: 1; height: 47px; border-radius: 13px; border: 1px solid #e5eaf3; background: white; color: #101d38; font-weight: 700; }
       .dialog-actions .primary { background: #1749e8; color: white; border-color: #1749e8; }
     `}</style>
+    <div className="body-scroll"><div ref={editor} className="editor" contentEditable suppressContentEditableWarning role="textbox" aria-label="Note body" aria-multiline="true" onInput={emitChange} onKeyUp={rememberSelection} onMouseUp={rememberSelection} onTouchEnd={rememberSelection} /></div>
     <div className="toolbar-rail">
       <div className="tools" role="toolbar" aria-label="Note formatting">
-        {tools.map((tool) => <button key={tool.title} type="button" className="tool" title={tool.title} aria-label={tool.title} onMouseDown={(event) => event.preventDefault()} onClick={tool.action}>{tool.label}</button>)}
+        {tools.map((tool) => <button key={tool.title} type="button" className="tool" title={tool.title} aria-label={tool.title} onMouseDown={(event) => event.preventDefault()} onClick={tool.action}><ToolIcon name={tool.icon} /></button>)}
       </div>
     </div>
-    <div className="body-scroll"><div ref={editor} className="editor" contentEditable suppressContentEditableWarning role="textbox" aria-label="Note body" aria-multiline="true" onInput={emitChange} onKeyUp={rememberSelection} onMouseUp={rememberSelection} onTouchEnd={rememberSelection} /></div>
     {tableOpen && <div className="veil"><div className="dialog">
       <div className="eyebrow">TABLE</div><h2>Set up your table</h2><p>Choose its size. The first row is the header.</p>
       <div className="dimension"><span>Rows</span><div className="stepper"><button onClick={() => setRows(Math.max(2, rows - 1))}>−</button><b>{rows}</b><button onClick={() => setRows(Math.min(12, rows + 1))}>+</button></div></div>

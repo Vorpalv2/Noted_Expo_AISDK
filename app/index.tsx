@@ -342,7 +342,7 @@ function PinIcon({ color, size = 18 }: { color: string; size?: number }) {
 
 function Editor({ note, saving, onChange, onClose, onDelete }: { note: Note; saving: boolean; onChange: (part: Partial<Note>) => void; onClose: (latestBody?: string) => void; onDelete: () => void }) {
   const richEditor = useRef<RichNoteEditorRef>(null);
-  return <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
+  return <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
     <KeyboardAvoidingView style={styles.editor} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.editorNav}>
         <Pressable onPress={() => { if (richEditor.current) richEditor.current.flush(); else onClose(); }} style={styles.backButton} hitSlop={8}><Text style={styles.backArrow}>‹</Text><Text style={styles.backLabel}>All notes</Text></Pressable>
