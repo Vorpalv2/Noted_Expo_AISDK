@@ -506,9 +506,12 @@ function NoteActions({ menu, onCancel, onEdit, onPin, onDelete }: { menu: NoteAc
   const { width, height } = useWindowDimensions();
   const menuWidth = 198;
   const menuHeight = 72;
-  const position = menu ? {
-    left: Math.min(Math.max(8, menu.x - menuWidth / 2), Math.max(8, width - menuWidth - 8)),
-    top: Math.min(Math.max(insets.top + 8, menu.y - menuHeight / 2), Math.max(insets.top + 8, height - insets.bottom - menuHeight - 8)),
+  const lastMenu = useRef<NoteActionMenu | null>(null);
+  if (menu) lastMenu.current = menu;
+  const anchor = menu ?? lastMenu.current;
+  const position = anchor ? {
+    left: Math.min(Math.max(8, anchor.x - menuWidth / 2), Math.max(8, width - menuWidth - 8)),
+    top: Math.min(Math.max(insets.top + 8, anchor.y - menuHeight / 2), Math.max(insets.top + 8, height - insets.bottom - menuHeight - 8)),
   } : { left: 8, top: 8 };
   return <Modal visible={!!menu} transparent animationType="fade" onRequestClose={onCancel} statusBarTranslucent>
     <View style={styles.noteActionsOverlay}>
