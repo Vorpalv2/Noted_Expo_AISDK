@@ -5,8 +5,9 @@ import { StatusBar } from "expo-status-bar";
 import { Swipeable } from "react-native-gesture-handler";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Svg, { Path } from "react-native-svg";
+import { MarkdownPreview } from "../components/MarkdownPreview";
 import {
-  Alert, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
+  Alert, Animated, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
   Text, TextInput, View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -252,7 +253,7 @@ function PinnedSection({ notes, open, togglePin }: { notes: Note[]; open: (note:
           </Pressable>
           <Pressable onPress={() => open(note)} style={({ pressed }) => [styles.pinnedCardMain, pressed && styles.cardPressed]}>
             <Text numberOfLines={2} style={[styles.cardTitle, { color: colors.ink, fontSize: 22 * cardScale, lineHeight: 27 * cardScale }]}>{note.title.trim() || "Untitled note"}</Text>
-            <Text numberOfLines={3} style={[styles.cardPreview, { color: colors.muted, fontSize: 15 * cardScale, lineHeight: 22 * cardScale }]}>{note.body.trim() || "A new page, ready when you are."}</Text>
+            <Text numberOfLines={3} style={[styles.cardPreview, { color: colors.muted, fontSize: 15 * cardScale, lineHeight: 22 * cardScale }]}>{markdownExcerpt(note.body) || "A new page, ready when you are."}</Text>
             <Text style={[styles.cardTime, { color: colors.muted, fontSize: 14 * cardScale }]}>{cardDate(note.updatedAt)}</Text>
           </Pressable>
         </View>;
@@ -288,7 +289,7 @@ function RecentNoteRow({ note, open, togglePin, onDelete }: { note: Note; open: 
     <View style={[styles.noteRow, swiped && styles.noteRowSwiped]}>
       <Pressable onPress={() => open(note)} style={({ pressed }) => [styles.noteCopy, pressed && styles.rowPressed]}>
         <Text numberOfLines={1} style={styles.noteTitle}>{note.title.trim() || "Untitled note"}</Text>
-        <Text numberOfLines={1} style={styles.notePreview}>{note.body.trim() || "A new page, ready when you are."}</Text>
+        <Text numberOfLines={1} style={styles.notePreview}>{markdownExcerpt(note.body) || "A new page, ready when you are."}</Text>
       </Pressable>
       <View style={styles.noteMeta}><Text style={styles.noteTime}>{relativeTime(note.updatedAt)}</Text><Pressable onPress={() => togglePin(note._id)} hitSlop={12} accessibilityRole="button" accessibilityLabel="Pin note" style={styles.pinButton}><PinIcon color={COLORS.blue} /></Pressable></View>
     </View>
@@ -340,6 +341,79 @@ function PinIcon({ color, size = 18 }: { color: string; size?: number }) {
 }
 
 function Editor({ note, saving, onChange, onClose, onDelete }: { note: Note; saving: boolean; onChange: (part: Partial<Note>) => void; onClose: () => void; onDelete: () => void }) {
+  const bodyInput = useRef<TextInput>(null);
+  const [mode, setMode] = useState<"write" | "preview">("write");
+  const [selection, setSelection] = useState({ start: note.body.length, end: note.body.length });
+  const [tableOpen, setTableOpen] = useState(false);
+  const [tableRows, setTableRows] = useState(3);
+  const [tableColumns, setTableColumns] = useState(3);
+
+  const replaceBody = (start: number, end: number, inserted: string, cursorStart: number, cursorEnd = cursorStart) => {
+    onChange({ body: `${note.body.slice(0, start)}${inserted}${note.body.slice(end)}` });
+    const nextSelection = { start: cursorStart, end: cursorEnd };
+    setSelection(nextSelection);
+    requestAnimationFrame(() => {
+      bodyInput.current?.focus();
+      bodyInput.current?.setNativeProps({ selection: nextSelection });
+    });
+  };
+
+  const wrapSelection = (prefix: string, suffix: string, placeholder: string) => {
+    const start = Math.min(selection.start, note.body.length);
+    const end = Math.min(selection.end, note.body.length);
+    const selected = note.body.slice(start, end);
+    const content = selected || placeholder;
+    replaceBody(start, end, `${prefix}${content}${suffix}`, start + prefix.length, start + prefix.length + content.length);
+  };
+
+  const prefixLine = (prefix: string) => {
+    const cursor = Math.min(selection.start, note.body.length);
+    const lineStart = note.body.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1;
+    replaceBody(lineStart, lineStart, prefix, cursor + prefix.length);
+  };
+
+  const insertTable = () => {
+    const start = Math.min(selection.start, note.body.length);
+    const end = Math.min(selection.end, note.body.length);
+    const columns = Array.from({ length: tableColumns }, (_, index) => `Column ${index + 1}`);
+    const header = `| ${columns.join(" | ")} |`;
+    const divider = `| ${columns.map(() => "---").join(" | ")} |`;
+    const emptyRow = `| ${columns.map(() => " ").join(" | ")} |`;
+    const table = [header, divider, ...Array.from({ length: tableRows - 1 }, () => emptyRow)].join("\n");
+    const prefix = start > 0 && note.body[start - 1] !== "\n" ? "\n\n" : "";
+    const suffix = end < note.body.length && note.body[end] !== "\n" ? "\n\n" : "";
+    const insertion = `${prefix}${table}${suffix}`;
+    const cellCursor = prefix.length + header.length + 1 + divider.length + 1 + 2;
+    replaceBody(start, end, insertion, start + cellCursor);
+    setTableOpen(false);
+  };
+
+  const format = (kind: string) => {
+    switch (kind) {
+      case "bold": wrapSelection("**", "**", "bold text"); break;
+      case "italic": wrapSelection("*", "*", "italic text"); break;
+      case "strike": wrapSelection("~~", "~~", "strikethrough"); break;
+      case "inline-code": wrapSelection("`", "`", "code"); break;
+      case "code-block": wrapSelection("```\n", "\n```", "code here"); break;
+      case "link": {
+        const start = Math.min(selection.start, note.body.length);
+        const end = Math.min(selection.end, note.body.length);
+        const selected = note.body.slice(start, end) || "link text";
+        const inserted = `[${selected}](https://example.com)`;
+        const urlStart = start + selected.length + 3;
+        replaceBody(start, end, inserted, urlStart, urlStart + "https://example.com".length);
+        break;
+      }
+      case "h1": prefixLine("# "); break;
+      case "h2": prefixLine("## "); break;
+      case "bullet": prefixLine("- "); break;
+      case "numbered": prefixLine("1. "); break;
+      case "task": prefixLine("- [ ] "); break;
+      case "quote": prefixLine("> "); break;
+      case "table": Keyboard.dismiss(); setTableOpen(true); break;
+    }
+  };
+
   return <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
     <KeyboardAvoidingView style={styles.editor} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.editorNav}>
@@ -347,14 +421,72 @@ function Editor({ note, saving, onChange, onClose, onDelete }: { note: Note; sav
         <View style={styles.saveStatus}><View style={[styles.saveDot, saving && styles.saveDotBusy]} /><Text style={styles.saveLabel}>{saving ? "Saving" : "Saved"}</Text></View>
         <Pressable onPress={onDelete} hitSlop={12} style={styles.moreButton}><Text style={styles.moreGlyph}>···</Text></Pressable>
       </View>
+      <View style={styles.markdownTools}>
+        <View style={styles.editorModeTabs}>
+          <Pressable onPress={() => setMode("write")} accessibilityRole="tab" accessibilityState={{ selected: mode === "write" }} style={[styles.editorModeTab, mode === "write" && styles.editorModeTabActive]}><Text style={[styles.editorModeText, mode === "write" && styles.editorModeTextActive]}>Write</Text></Pressable>
+          <Pressable onPress={() => { Keyboard.dismiss(); setMode("preview"); }} accessibilityRole="tab" accessibilityState={{ selected: mode === "preview" }} style={[styles.editorModeTab, mode === "preview" && styles.editorModeTabActive]}><Text style={[styles.editorModeText, mode === "preview" && styles.editorModeTextActive]}>Preview</Text></Pressable>
+        </View>
+        {mode === "write" && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.markdownToolbar} keyboardShouldPersistTaps="always">
+          <MarkdownToolButton label="B" hint="Bold" emphasis onPress={() => format("bold")} />
+          <MarkdownToolButton label="I" hint="Italic" italic onPress={() => format("italic")} />
+          <MarkdownToolButton label="S̶" hint="Strikethrough" onPress={() => format("strike")} />
+          <MarkdownToolButton label="H1" hint="Heading 1" onPress={() => format("h1")} />
+          <MarkdownToolButton label="H2" hint="Heading 2" onPress={() => format("h2")} />
+          <MarkdownToolButton label="• List" hint="Bullet list" onPress={() => format("bullet")} />
+          <MarkdownToolButton label="1. List" hint="Numbered list" onPress={() => format("numbered")} />
+          <MarkdownToolButton label="☐" hint="Task list" onPress={() => format("task")} />
+          <MarkdownToolButton label="❞" hint="Quote" onPress={() => format("quote")} />
+          <MarkdownToolButton label="`</>`" hint="Code" onPress={() => format("inline-code")} />
+          <MarkdownToolButton label="Link" hint="Insert link" onPress={() => format("link")} />
+          <MarkdownToolButton label="Table" hint="Insert table" onPress={() => format("table")} />
+        </ScrollView>}
+      </View>
       <ScrollView style={styles.editorScroll} contentContainerStyle={styles.editorContent} keyboardShouldPersistTaps="handled">
-        <TextInput value={note.title} onChangeText={(title) => onChange({ title })} placeholder="Give this note a name" placeholderTextColor="#A3AEC2" style={styles.titleInput} multiline returnKeyType="next" blurOnSubmit={false} />
-        <View style={styles.editorRule}><View style={styles.editorRuleAccent} /></View>
-        <TextInput value={note.body} onChangeText={(body) => onChange({ body })} placeholder="Start anywhere…" placeholderTextColor="#A3AEC2" style={styles.bodyInput} multiline textAlignVertical="top" />
+        {mode === "write" ? <>
+          <TextInput value={note.title} onChangeText={(title) => onChange({ title })} placeholder="Give this note a name" placeholderTextColor="#A3AEC2" style={styles.titleInput} multiline returnKeyType="next" blurOnSubmit={false} />
+          <View style={styles.editorRule}><View style={styles.editorRuleAccent} /></View>
+          <TextInput ref={bodyInput} value={note.body} onChangeText={(body) => onChange({ body })} onSelectionChange={(event) => setSelection(event.nativeEvent.selection)} selection={selection} placeholder="Start anywhere…" placeholderTextColor="#A3AEC2" style={styles.bodyInput} multiline textAlignVertical="top" />
+        </> : <MarkdownPreview title={note.title} markdown={note.body} />}
         <Text style={styles.editorFooter}>JUST FOR YOU  ·  {new Date(note.updatedAt).toLocaleDateString(undefined, { month: "long", day: "numeric" })}</Text>
       </ScrollView>
     </KeyboardAvoidingView>
+    <TableBuilder visible={tableOpen} rows={tableRows} columns={tableColumns} setRows={setTableRows} setColumns={setTableColumns} onCancel={() => setTableOpen(false)} onInsert={insertTable} />
   </SafeAreaView>;
+}
+
+function MarkdownToolButton({ label, hint, emphasis, italic, onPress }: { label: string; hint: string; emphasis?: boolean; italic?: boolean; onPress: () => void }) {
+  return <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={hint} style={({ pressed }) => [styles.markdownToolButton, pressed && styles.markdownToolPressed]}>
+    <Text style={[styles.markdownToolLabel, emphasis && styles.markdownToolBold, italic && styles.markdownToolItalic]}>{label}</Text>
+  </Pressable>;
+}
+
+function TableBuilder({ visible, rows, columns, setRows, setColumns, onCancel, onInsert }: { visible: boolean; rows: number; columns: number; setRows: (value: number) => void; setColumns: (value: number) => void; onCancel: () => void; onInsert: () => void }) {
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel} statusBarTranslucent>
+    <View style={styles.tableOverlay}>
+      <View style={styles.tableBuilderCard}>
+        <Text style={styles.tableBuilderEyebrow}>MARKDOWN TABLE</Text>
+        <Text style={styles.tableBuilderTitle}>Set up your table</Text>
+        <Text style={styles.tableBuilderBody}>Choose the size. The first row will be your header.</Text>
+        <TableDimension label="Rows" value={rows} min={2} max={12} setValue={setRows} />
+        <TableDimension label="Columns" value={columns} min={1} max={8} setValue={setColumns} />
+        <View style={styles.tableBuilderButtons}>
+          <Pressable onPress={onCancel} style={styles.tableBuilderCancel}><Text style={styles.tableBuilderCancelText}>Cancel</Text></Pressable>
+          <Pressable onPress={onInsert} style={styles.tableBuilderInsert}><Text style={styles.tableBuilderInsertText}>Insert table</Text></Pressable>
+        </View>
+      </View>
+    </View>
+  </Modal>;
+}
+
+function TableDimension({ label, value, min, max, setValue }: { label: string; value: number; min: number; max: number; setValue: (value: number) => void }) {
+  return <View style={styles.tableDimension}>
+    <Text style={styles.tableDimensionLabel}>{label}</Text>
+    <View style={styles.tableStepper}>
+      <Pressable onPress={() => setValue(Math.max(min, value - 1))} accessibilityRole="button" accessibilityLabel={`Decrease ${label.toLowerCase()}`} style={styles.tableStepButton}><Text style={styles.tableStepGlyph}>−</Text></Pressable>
+      <Text style={styles.tableDimensionValue}>{value}</Text>
+      <Pressable onPress={() => setValue(Math.min(max, value + 1))} accessibilityRole="button" accessibilityLabel={`Increase ${label.toLowerCase()}`} style={styles.tableStepButton}><Text style={styles.tableStepGlyph}>+</Text></Pressable>
+    </View>
+  </View>;
 }
 
 function relativeTime(time: number) {
@@ -371,6 +503,20 @@ function relativeTime(time: number) {
 
 function cardDate(time: number) {
   return new Date(time).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function markdownExcerpt(markdown: string) {
+  return markdown
+    .replace(/```[\s\S]*?```/g, " Code ")
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/^\s*#{1,6}\s+/gm, "")
+    .replace(/^\s*>\s?/gm, "")
+    .replace(/^\s*(?:[-+*]|\d+[.)])\s+/gm, "")
+    .replace(/^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?\s*$/gm, "")
+    .replace(/[|*_~`]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 const styles = StyleSheet.create({
@@ -409,4 +555,6 @@ const styles = StyleSheet.create({
   noResults: { alignItems: "center", paddingTop: 78 }, noResultsTitle: { color: COLORS.ink, fontWeight: "700", fontSize: 19 }, noResultsBody: { color: COLORS.muted, fontSize: 13, marginTop: 7 },
   loadingState: { alignItems: "center", paddingTop: 90 }, loadingText: { color: COLORS.muted, fontSize: 14 }, busyVeil: { position: "absolute", bottom: 94, alignSelf: "center", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: COLORS.ink }, busyText: { color: "white", fontSize: 12 },
   editor: { flex: 1 }, editorNav: { height: 59, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 22, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line }, backButton: { flexDirection: "row", alignItems: "center", minWidth: 95 }, backArrow: { color: COLORS.blue, fontSize: 32, lineHeight: 34, marginRight: 4, fontWeight: "300", marginTop: -3 }, backLabel: { color: COLORS.blue, fontSize: 14, fontWeight: "600" }, saveStatus: { flexDirection: "row", alignItems: "center" }, saveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#63C9A1", marginRight: 6 }, saveDotBusy: { backgroundColor: COLORS.yellow }, saveLabel: { color: COLORS.muted, fontSize: 11 }, moreButton: { minWidth: 40, alignItems: "flex-end" }, moreGlyph: { fontSize: 23, color: COLORS.muted, letterSpacing: 1, marginTop: -12 }, editorScroll: { flex: 1 }, editorContent: { paddingTop: 31, paddingHorizontal: 25, paddingBottom: 50, minHeight: "100%" }, titleInput: { color: COLORS.ink, fontSize: 30, lineHeight: 37, fontWeight: "700", letterSpacing: -0.9, padding: 0, minHeight: 46 }, editorRule: { height: 1, backgroundColor: COLORS.line, marginTop: 23, marginBottom: 21 }, editorRuleAccent: { width: 35, height: 2, backgroundColor: COLORS.blue, marginTop: -1 }, bodyInput: { flex: 1, color: "#34415B", fontSize: 18, lineHeight: 29, padding: 0, minHeight: 250 }, editorFooter: { color: "#A0AABD", fontSize: 10, fontWeight: "700", letterSpacing: 1.2, marginTop: 50 },
+  markdownTools: { paddingHorizontal: 22, paddingTop: 11, paddingBottom: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line }, editorModeTabs: { alignSelf: "flex-start", flexDirection: "row", backgroundColor: "#EEF2FA", padding: 3, borderRadius: 12, marginBottom: 10 }, editorModeTab: { minWidth: 75, alignItems: "center", justifyContent: "center", height: 31, borderRadius: 9 }, editorModeTabActive: { backgroundColor: "white", shadowColor: COLORS.ink, shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 1 }, editorModeText: { color: COLORS.muted, fontSize: 12, fontWeight: "600" }, editorModeTextActive: { color: COLORS.ink }, markdownToolbar: { alignItems: "center", gap: 7, paddingRight: 5 }, markdownToolButton: { minWidth: 37, height: 34, paddingHorizontal: 10, alignItems: "center", justifyContent: "center", borderRadius: 9, borderWidth: 1, borderColor: "#D9E0EC", backgroundColor: "white" }, markdownToolPressed: { backgroundColor: COLORS.pale }, markdownToolLabel: { color: COLORS.ink, fontSize: 12, fontWeight: "700" }, markdownToolBold: { fontWeight: "900" }, markdownToolItalic: { fontStyle: "italic" },
+  tableOverlay: { flex: 1, backgroundColor: "rgba(10, 20, 44, 0.38)", alignItems: "center", justifyContent: "center", paddingHorizontal: 26 }, tableBuilderCard: { width: "100%", maxWidth: 390, borderRadius: 24, backgroundColor: "white", padding: 24, shadowColor: "#0A1633", shadowOpacity: 0.2, shadowRadius: 26, shadowOffset: { width: 0, height: 12 }, elevation: 12 }, tableBuilderEyebrow: { color: COLORS.blue, fontSize: 10, fontWeight: "800", letterSpacing: 1.4 }, tableBuilderTitle: { color: COLORS.ink, fontFamily: "serif", fontSize: 25, lineHeight: 31, fontWeight: "600", marginTop: 8 }, tableBuilderBody: { color: COLORS.muted, fontSize: 14, lineHeight: 21, marginTop: 5, marginBottom: 15 }, tableDimension: { minHeight: 54, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderTopWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line }, tableDimensionLabel: { color: COLORS.ink, fontSize: 14, fontWeight: "600" }, tableStepper: { flexDirection: "row", alignItems: "center", gap: 15 }, tableStepButton: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderRadius: 10, backgroundColor: COLORS.pale }, tableStepGlyph: { color: COLORS.blue, fontSize: 20, lineHeight: 23, fontWeight: "500" }, tableDimensionValue: { minWidth: 18, textAlign: "center", color: COLORS.ink, fontSize: 15, fontWeight: "700" }, tableBuilderButtons: { flexDirection: "row", gap: 10, marginTop: 20 }, tableBuilderCancel: { flex: 1, height: 47, borderRadius: 13, borderWidth: 1, borderColor: COLORS.line, alignItems: "center", justifyContent: "center" }, tableBuilderCancelText: { color: COLORS.ink, fontSize: 14, fontWeight: "600" }, tableBuilderInsert: { flex: 1, height: 47, borderRadius: 13, backgroundColor: COLORS.blue, alignItems: "center", justifyContent: "center" }, tableBuilderInsertText: { color: "white", fontSize: 14, fontWeight: "700" },
 });
