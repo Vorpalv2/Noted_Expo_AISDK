@@ -129,7 +129,7 @@ function ToolIcon({ name }: { name: ToolIconName }) {
     case 'divider': drawing = <><path {...shared} d="M4 12h5M15 12h5M9 8l3 4-3 4M15 8l-3 4 3 4"/></>; break;
     case 'table': drawing = <><rect {...shared} x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path {...shared} d="M3.5 10h17M9 4.5v15M15 4.5v15"/></>; break;
   }
-  return <svg aria-hidden="true" viewBox="0 0 24 24" width="21" height="21" {...shared}>{drawing}</svg>;
+  return <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24" {...shared}>{drawing}</svg>;
 }
 
 export default function RichNoteEditor({ noteId, markdown, onChange, onFinish, ref }: Props) {
@@ -210,10 +210,10 @@ export default function RichNoteEditor({ noteId, markdown, onChange, onFinish, r
       * { box-sizing: border-box; }
       .rich-shell { position: relative; width: 100%; max-width: 100%; min-width: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: #34415b; }
       .toolbar-rail { position: absolute; z-index: 10; left: 16px; right: 16px; bottom: 12px; min-width: 0; overflow: hidden; border: 1px solid #e0e6f0; border-radius: 22px; background: rgba(255, 255, 255, .96); box-shadow: 0 8px 25px rgba(18, 39, 83, .14), 0 2px 5px rgba(18, 39, 83, .08); backdrop-filter: blur(16px); }
-      .tools { display: flex; width: 100%; min-width: 0; gap: 4px; padding: 6px; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch; touch-action: pan-x; }
+      .tools { display: flex; width: 100%; min-width: 0; gap: 8px; padding: 8px; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch; touch-action: pan-x; }
       .tools::-webkit-scrollbar { display: none; }
       button { font: inherit; cursor: pointer; }
-      .tool { flex: none; display: grid; place-items: center; width: 39px; height: 39px; padding: 0; border: 0; border-radius: 14px; background: transparent; color: #53617a; -webkit-tap-highlight-color: transparent; }
+      .tool { flex: none; display: grid; place-items: center; width: 46px; height: 46px; padding: 0; border: 0; border-radius: 16px; background: transparent; color: #53617a; -webkit-tap-highlight-color: transparent; }
       .tool:active { background: #eaf0ff; color: #1749e8; }
       .tool:focus-visible { outline: 2px solid #1749e8; outline-offset: -2px; }
       .body-scroll { flex: 1; min-width: 0; min-height: 0; width: 100%; overflow-x: hidden; overflow-y: auto; padding: 16px 25px 112px; }
