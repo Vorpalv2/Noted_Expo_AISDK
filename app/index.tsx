@@ -6,7 +6,7 @@ import { Swipeable } from "react-native-gesture-handler";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Svg, { Path } from "react-native-svg";
 import {
-  Alert, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
+  Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
   Text, TextInput, View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -269,38 +269,34 @@ function RecentSection({ notes, open, togglePin, onDelete, divided }: { notes: N
 }
 
 function RecentNoteRow({ note, open, togglePin, onDelete }: { note: Note; open: (note: Note) => void; togglePin: (id: string) => void | Promise<unknown>; onDelete: (note: Note) => void }) {
-  const swipeProgress = useRef(new Animated.Value(0)).current;
-  const animateSwipe = (toValue: number) => Animated.timing(swipeProgress, { toValue, duration: 160, useNativeDriver: false }).start();
+  const [swiped, setSwiped] = useState(false);
   return <Swipeable
     friction={2}
     leftThreshold={36}
     rightThreshold={36}
     overshootLeft={false}
     overshootRight={false}
-    onSwipeableWillOpen={() => animateSwipe(1)}
-    onSwipeableWillClose={() => animateSwipe(0)}
-    renderLeftActions={(progress, _, swipeable) => <SwipeAction label="Pin" kind="pin" progress={progress} onPress={() => { swipeable.close(); togglePin(note._id); }} />}
-    renderRightActions={(progress, _, swipeable) => <SwipeAction label="Delete" kind="delete" progress={progress} onPress={() => { swipeable.close(); onDelete(note); }} />}
+    onSwipeableWillOpen={() => setSwiped(true)}
+    onSwipeableWillClose={() => setSwiped(false)}
+    renderLeftActions={(_, __, swipeable) => <SwipeAction label="Pin" kind="pin" onPress={() => { swipeable.close(); togglePin(note._id); }} />}
+    renderRightActions={(_, __, swipeable) => <SwipeAction label="Delete" kind="delete" onPress={() => { swipeable.close(); onDelete(note); }} />}
   >
-    <Animated.View style={[styles.noteRow, {
-      opacity: swipeProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 0.82] }),
-      filter: [{ blur: swipeProgress.interpolate({ inputRange: [0, 1], outputRange: [0, 1.2] }) }],
-    }]}>
+    <View style={[styles.noteRow, swiped && styles.noteRowSwiped]}>
       <Pressable onPress={() => open(note)} style={({ pressed }) => [styles.noteCopy, pressed && styles.rowPressed]}>
         <Text numberOfLines={1} style={styles.noteTitle}>{note.title.trim() || "Untitled note"}</Text>
         <Text numberOfLines={1} style={styles.notePreview}>{note.body.trim() || "A new page, ready when you are."}</Text>
       </Pressable>
       <View style={styles.noteMeta}><Text style={styles.noteTime}>{relativeTime(note.updatedAt)}</Text><Pressable onPress={() => togglePin(note._id)} hitSlop={12} accessibilityRole="button" accessibilityLabel="Pin note" style={styles.pinButton}><PinIcon color={COLORS.blue} /></Pressable></View>
-    </Animated.View>
+    </View>
   </Swipeable>;
 }
 
-function SwipeAction({ label, kind, progress, onPress }: { label: string; kind: "pin" | "delete"; progress: Animated.AnimatedInterpolation<number>; onPress: () => void }) {
+function SwipeAction({ label, kind, onPress }: { label: string; kind: "pin" | "delete"; onPress: () => void }) {
   return <Pressable
     onPress={onPress}
     accessibilityRole="button"
     accessibilityLabel={`${label} note`}
-    style={[styles.swipeAction, kind === "pin" ? styles.swipePin : styles.swipeDelete, { opacity: progress.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1], extrapolate: "clamp" }) }]}
+    style={[styles.swipeAction, kind === "pin" ? styles.swipePin : styles.swipeDelete]}
   >
     {kind === "pin" ? <PinIcon color="white" size={21} /> : <Text style={styles.swipeDeleteGlyph}>×</Text>}
     <Text style={styles.swipeActionLabel}>{label}</Text>
@@ -392,7 +388,7 @@ const styles = StyleSheet.create({
   pinButton: { width: 27, height: 27, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.pale },
   cardTitle: { fontFamily: "serif", fontSize: 22, fontWeight: "600", lineHeight: 27, letterSpacing: -0.4 }, cardPreview: { fontSize: 15, lineHeight: 22, marginTop: 9 }, cardTime: { marginTop: "auto", paddingTop: 12, fontSize: 14, fontWeight: "500" },
   recentSection: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.line, paddingTop: 21, marginTop: 0 },
-  noteRow: { minHeight: 82, flexDirection: "row", alignItems: "center", borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line, paddingVertical: 14 }, rowPressed: { opacity: 0.65 }, noteCopy: { flex: 1, paddingRight: 10 }, noteTitle: { color: COLORS.ink, fontSize: 16.5, fontWeight: "600", letterSpacing: -0.25 }, notePreview: { color: COLORS.muted, fontSize: 13.5, lineHeight: 18, marginTop: 5 }, noteMeta: { width: 77, alignItems: "center", flexDirection: "row", justifyContent: "space-between" }, noteTime: { color: "#9AA5B7", fontSize: 11, marginBottom: 2 },
+  noteRow: { minHeight: 82, flexDirection: "row", alignItems: "center", borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line, paddingVertical: 14 }, noteRowSwiped: { opacity: 0.82, filter: [{ blur: 1.2 }] }, rowPressed: { opacity: 0.65 }, noteCopy: { flex: 1, paddingRight: 10 }, noteTitle: { color: COLORS.ink, fontSize: 16.5, fontWeight: "600", letterSpacing: -0.25 }, notePreview: { color: COLORS.muted, fontSize: 13.5, lineHeight: 18, marginTop: 5 }, noteMeta: { width: 77, alignItems: "center", flexDirection: "row", justifyContent: "space-between" }, noteTime: { color: "#9AA5B7", fontSize: 11, marginBottom: 2 },
   swipeAction: { width: 84, alignItems: "center", justifyContent: "center", gap: 5 }, swipePin: { backgroundColor: COLORS.blue }, swipeDelete: { backgroundColor: "#D64A55" }, swipeActionLabel: { color: "white", fontSize: 11, fontWeight: "700" }, swipeDeleteGlyph: { color: "white", fontSize: 26, lineHeight: 26, fontWeight: "300" },
   deleteOverlay: { flex: 1, backgroundColor: "rgba(10, 20, 44, 0.38)", alignItems: "center", justifyContent: "center", paddingHorizontal: 26 },
   deleteCard: { width: "100%", maxWidth: 390, backgroundColor: "white", borderRadius: 25, paddingHorizontal: 24, paddingTop: 25, paddingBottom: 22, shadowColor: "#0A1633", shadowOpacity: 0.2, shadowRadius: 26, shadowOffset: { width: 0, height: 12 }, elevation: 12 },
