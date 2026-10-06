@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { anyApi } from "convex/server";
 import { useMutation, useQuery } from "convex/react";
 import { StatusBar } from "expo-status-bar";
-import { Swipeable } from "react-native-gesture-handler";
+import { Gesture, GestureDetector, Swipeable } from "react-native-gesture-handler";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Svg, { Circle, Path } from "react-native-svg";
 import RichNoteEditor from "../components/RichNoteEditor";
@@ -148,6 +148,14 @@ function NotesExperience({
     }
     setActive(null);
   };
+  const backSwipe = useMemo(() => Gesture.Pan()
+    .hitSlop({ left: 0, width: 28 })
+    .activeOffsetX(20)
+    .failOffsetY([-18, 18])
+    .onEnd((event) => {
+      if (event.translationX > 90) void closeEditor();
+    })
+    .runOnJS(true), [closeEditor]);
   const handleTogglePin = (id: string) => {
     Promise.resolve(togglePin(id)).catch(() => Alert.alert("Couldn’t update this note", "Check your connection and try again."));
   };
@@ -168,11 +176,18 @@ function NotesExperience({
   };
   const deleteNote = () => { if (active) requestDelete(active); };
 
-  if (active) return <>
-    <StatusBar style="dark" />
-    <Editor note={active} saving={saving} onChange={updateActive} onClose={closeEditor} onDelete={deleteNote} />
-    <DeleteConfirmation note={deleteTarget} error={deleteError} deleting={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} />
-  </>;
+  if (active) {
+    const editorScreen = <>
+      <StatusBar style="dark" />
+      <Editor note={active} saving={saving} onChange={updateActive} onClose={closeEditor} onDelete={deleteNote} />
+      <DeleteConfirmation note={deleteTarget} error={deleteError} deleting={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} />
+    </>;
+    return Platform.OS === "web" ? editorScreen : (
+      <GestureDetector gesture={backSwipe}>
+        <View style={{ flex: 1 }}>{editorScreen}</View>
+      </GestureDetector>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.safe, styles.homeRoot]} edges={["left", "right"]}>
