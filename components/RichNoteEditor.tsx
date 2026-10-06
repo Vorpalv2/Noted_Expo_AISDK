@@ -6,6 +6,7 @@ type Props = {
   noteId: string;
   markdown: string;
   flushSignal: number;
+  safeBottom?: number;
   onChange: (markdown: string) => Promise<void>;
   onFinish: (markdown: string) => Promise<void>;
   onReady: () => void;
@@ -128,7 +129,7 @@ function ToolIcon({ name }: { name: ToolIconName }) {
   return <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24" {...shared}>{drawing}</svg>;
 }
 
-export default function RichNoteEditor({ noteId, markdown, flushSignal, onChange, onFinish, onReady }: Props) {
+export default function RichNoteEditor({ noteId, markdown, flushSignal, safeBottom = 0, onChange, onFinish, onReady }: Props) {
   const editor = useRef<HTMLDivElement>(null);
   const savedRange = useRef<Range | null>(null);
   const loadedNote = useRef<string | null>(null);
@@ -209,14 +210,14 @@ export default function RichNoteEditor({ noteId, markdown, flushSignal, onChange
       html, body, #root { margin: 0; width: 100%; max-width: 100%; min-width: 0; height: 100%; overflow-x: hidden; background: #f8fafe; }
       * { box-sizing: border-box; }
       .rich-shell { position: relative; width: 100%; max-width: 100%; min-width: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: #34415b; }
-      .toolbar-rail { position: absolute; z-index: 10; left: 16px; right: 16px; bottom: 12px; min-width: 0; overflow: hidden; border: 1px solid #e0e6f0; border-radius: 22px; background: rgba(255, 255, 255, .96); box-shadow: 0 8px 25px rgba(18, 39, 83, .14), 0 2px 5px rgba(18, 39, 83, .08); backdrop-filter: blur(16px); }
+      .toolbar-rail { position: absolute; z-index: 10; left: 16px; right: 16px; bottom: ${safeBottom + 12}px; min-width: 0; overflow: hidden; border: 1px solid #e0e6f0; border-radius: 22px; background: rgba(255, 255, 255, .96); box-shadow: 0 8px 25px rgba(18, 39, 83, .14), 0 2px 5px rgba(18, 39, 83, .08); backdrop-filter: blur(16px); }
       .tools { display: flex; width: 100%; min-width: 0; gap: 8px; padding: 8px; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch; touch-action: pan-x; }
       .tools::-webkit-scrollbar { display: none; }
       button { font: inherit; cursor: pointer; }
       .tool { flex: none; display: grid; place-items: center; width: 46px; height: 46px; padding: 0; border: 0; border-radius: 16px; background: transparent; color: #53617a; -webkit-tap-highlight-color: transparent; }
       .tool:active { background: #eaf0ff; color: #1749e8; }
       .tool:focus-visible { outline: 2px solid #1749e8; outline-offset: -2px; }
-      .body-scroll { flex: 1; min-width: 0; min-height: 0; width: 100%; overflow-x: hidden; overflow-y: auto; padding: 16px 25px 112px; }
+      .body-scroll { flex: 1; min-width: 0; min-height: 0; width: 100%; overflow-x: hidden; overflow-y: auto; padding: 16px 25px ${safeBottom + 78}px; }
       .editor { width: 100%; min-width: 0; max-width: 100%; min-height: 100%; outline: none; font-size: 17px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
       .editor:empty:before { content: 'Start anywhere…'; color: #a3aec2; }
       .editor p { margin: 0 0 12px; }

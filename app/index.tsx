@@ -469,9 +469,10 @@ function PinIcon({ color, size = 18 }: { color: string; size?: number }) {
 }
 
 function Editor({ note, saving, onChange, onClose, onDelete }: { note: Note; saving: boolean; onChange: (part: Partial<Note>) => void; onClose: (latestBody?: string) => void; onDelete: () => void }) {
+  const insets = useSafeAreaInsets();
   const [flushSignal, setFlushSignal] = useState(0);
   const [editorLoaded, setEditorLoaded] = useState(Platform.OS === "web");
-  return <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
+  return <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
     <KeyboardAvoidingView style={styles.editor} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.editorNav}>
         <Pressable onPress={() => setFlushSignal((current) => current + 1)} style={styles.backButton} hitSlop={8}><Text style={styles.backArrow}>‹</Text><Text style={styles.backLabel}>All notes</Text></Pressable>
@@ -483,7 +484,7 @@ function Editor({ note, saving, onChange, onClose, onDelete }: { note: Note; sav
         <View style={styles.editorRule}><View style={styles.editorRuleAccent} /></View>
       </View>
       <View style={{ flex: 1, minHeight: 0, width: "100%" }}>
-        <RichNoteEditor noteId={note._id} markdown={note.body} flushSignal={flushSignal} onChange={async (body) => onChange({ body })} onFinish={async (body) => onClose(body)} onReady={() => setEditorLoaded(true)} dom={{ style: { flex: 1, width: "100%" } }} />
+        <RichNoteEditor noteId={note._id} markdown={note.body} flushSignal={flushSignal} safeBottom={insets.bottom} onChange={async (body) => onChange({ body })} onFinish={async (body) => onClose(body)} onReady={() => setEditorLoaded(true)} dom={{ style: { flex: 1, width: "100%" } }} />
         {!editorLoaded && <View pointerEvents="none" style={styles.editorLoading}><ActivityIndicator size="large" color={COLORS.blue} /></View>}
       </View>
     </KeyboardAvoidingView>
