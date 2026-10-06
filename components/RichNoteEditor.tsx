@@ -274,14 +274,15 @@ export default function RichNoteEditor({ noteId, markdown, flushSignal, safeBott
       * { box-sizing: border-box; }
       .rich-shell { position: relative; width: 100%; max-width: 100%; min-width: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: #34415b; }
       .toolbar-rail { position: fixed; z-index: 10; left: 16px; right: 16px; bottom: max(8px, ${safeBottom}px); display: flex; justify-content: flex-end; min-width: 0; pointer-events: none; }
-      .toolbar-panel { position: relative; width: 100%; min-width: 0; overflow: hidden; border: 1px solid #e0e6f0; border-radius: 22px; background: rgba(255, 255, 255, .96); box-shadow: 0 8px 25px rgba(18, 39, 83, .14), 0 2px 5px rgba(18, 39, 83, .08); backdrop-filter: blur(16px); pointer-events: auto; transition: width 240ms cubic-bezier(.2,.8,.2,1), height 240ms cubic-bezier(.2,.8,.2,1), border-radius 240ms ease; }
+      .toolbar-panel { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; overflow: hidden; border: 1px solid #e0e6f0; border-radius: 22px; background: rgba(255, 255, 255, .96); box-shadow: 0 8px 25px rgba(18, 39, 83, .14), 0 2px 5px rgba(18, 39, 83, .08); backdrop-filter: blur(16px); pointer-events: auto; transition: width 240ms cubic-bezier(.2,.8,.2,1), height 240ms cubic-bezier(.2,.8,.2,1), border-radius 240ms ease; }
       .toolbar-rail.collapsed .toolbar-panel { width: 56px; height: 56px; border-radius: 28px; }
-      .tools { display: flex; width: 100%; min-width: 0; gap: 8px; padding: 8px; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch; touch-action: pan-x; }
+      .toolbar-toggle { flex: none; display: grid; place-items: center; width: 46px; height: 46px; margin-left: 8px; padding: 0; border: 0; border-radius: 15px; background: transparent; color: #75829c; -webkit-tap-highlight-color: transparent; }
+      .toolbar-toggle:active { background: #eaf0ff; color: #1749e8; }
+      .toolbar-toggle svg { width: 21px; height: 21px; }
+      .toolbar-rail.collapsed .toolbar-toggle { width: 54px; height: 54px; margin-left: 0; border-radius: 50%; color: #1749e8; }
+      .tools { display: flex; flex: 1; width: 0; min-width: 0; gap: 8px; padding: 8px; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch; touch-action: pan-x; }
       .tools::-webkit-scrollbar { display: none; }
-      .toolbar-rail.collapsed .tools { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 120ms ease, visibility 0s linear 120ms; }
-      .toolbar-reopen { position: absolute; inset: 0; display: grid; place-items: center; width: 100%; height: 100%; padding: 0; border: 0; border-radius: inherit; background: transparent; color: #1749e8; opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
-      .toolbar-rail.collapsed .toolbar-reopen { opacity: 1; pointer-events: auto; }
-      .toolbar-reopen svg { width: 25px; height: 25px; }
+      .toolbar-rail.collapsed .tools { flex: 0 0 0; width: 0; padding: 0; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 120ms ease, visibility 0s linear 120ms; }
       button { font: inherit; cursor: pointer; }
       .tool { flex: none; display: grid; place-items: center; width: 46px; height: 46px; padding: 0; border: 0; border-radius: 16px; background: transparent; color: #53617a; -webkit-tap-highlight-color: transparent; }
       .tool:active { background: #eaf0ff; color: #1749e8; }
@@ -328,10 +329,12 @@ export default function RichNoteEditor({ noteId, markdown, flushSignal, safeBott
       onMouseUp={(event) => finishToolbarDrag(event.clientX, event.clientY)}
     >
       <div className="toolbar-panel">
+        <button type="button" className="toolbar-toggle" aria-label={toolbarCollapsed ? 'Show formatting tools' : 'Collapse formatting tools'} title={toolbarCollapsed ? 'Show formatting tools' : 'Collapse formatting tools'} aria-expanded={!toolbarCollapsed} onMouseDown={(event) => event.preventDefault()} onClick={() => setToolbarCollapsed((collapsed) => !collapsed)}>
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d={toolbarCollapsed ? 'm9 5 7 7-7 7' : 'm15 5-7 7 7 7'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </button>
         <div className="tools" role="toolbar" aria-label="Note formatting">
           {tools.map((tool) => <button key={tool.title} type="button" className={`tool${activeTools.has(tool.icon) ? ' active' : ''}`} title={tool.title} aria-label={tool.title} aria-pressed={activeTools.has(tool.icon)} onMouseDown={(event) => event.preventDefault()} onClick={tool.action}><ToolIcon name={tool.icon} /></button>)}
         </div>
-        <button type="button" className="toolbar-reopen" aria-label="Show formatting tools" title="Show formatting tools" onMouseDown={(event) => event.preventDefault()} onClick={() => setToolbarCollapsed(false)}><ToolIcon name="body" /></button>
       </div>
     </div>
     {tableOpen && <div className="veil"><div className="dialog">
