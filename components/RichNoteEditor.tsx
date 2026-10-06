@@ -182,16 +182,17 @@ export default function RichNoteEditor({ noteId, markdown, onChange, onFinish, r
 
   return <div className="rich-shell">
     <style>{`
-      html, body, #root { margin: 0; height: 100%; background: #f8fafe; }
+      html, body, #root { margin: 0; width: 100%; max-width: 100%; min-width: 0; height: 100%; overflow-x: hidden; background: #f8fafe; }
       * { box-sizing: border-box; }
-      .rich-shell { height: 100%; display: flex; flex-direction: column; font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: #34415b; }
-      .tools { display: flex; flex: none; gap: 7px; padding: 8px 22px; overflow-x: auto; border-bottom: 1px solid #e5eaf3; scrollbar-width: none; }
+      .rich-shell { width: 100%; max-width: 100%; min-width: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: #34415b; }
+      .toolbar-rail { flex: none; width: 100%; min-width: 0; overflow: hidden; border-bottom: 1px solid #e5eaf3; background: #f8fafe; }
+      .tools { display: flex; width: 100%; min-width: 0; gap: 7px; padding: 8px 22px; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch; touch-action: pan-x; }
       .tools::-webkit-scrollbar { display: none; }
       button { font: inherit; cursor: pointer; }
       .tool { flex: none; min-width: 37px; height: 34px; padding: 0 10px; border-radius: 9px; border: 1px solid #d9e0ec; background: white; color: #101d38; font-size: 13px; font-weight: 700; }
       .tool:active { background: #eaf0ff; }
-      .body-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 25px 30px; }
-      .editor { min-height: 100%; outline: none; font-size: 17px; line-height: 1.55; overflow-wrap: anywhere; }
+      .body-scroll { flex: 1; min-width: 0; min-height: 0; width: 100%; overflow-x: hidden; overflow-y: auto; padding: 16px 25px 30px; }
+      .editor { width: 100%; min-width: 0; max-width: 100%; min-height: 100%; outline: none; font-size: 17px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
       .editor:empty:before { content: 'Start anywhere…'; color: #a3aec2; }
       .editor p { margin: 0 0 12px; }
       .editor h1, .editor h2, .editor h3 { color: #101d38; margin: 12px 0 10px; line-height: 1.25; }
@@ -200,11 +201,11 @@ export default function RichNoteEditor({ noteId, markdown, onChange, onFinish, r
       .editor ul, .editor ol { padding-left: 24px; margin: 8px 0 13px; }
       .editor a { color: #1749e8; }
       .editor code { background: #eaf0ff; border-radius: 4px; padding: 1px 3px; }
-      .editor pre { background: #101d38; color: white; border-radius: 12px; padding: 14px; overflow-x: auto; }
+      .editor pre { max-width: 100%; background: #101d38; color: white; border-radius: 12px; padding: 14px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
       .editor pre code { background: none; }
       .editor hr { border: 0; border-top: 1px solid #d9e0ec; margin: 17px 0; }
-      .editor table { border-collapse: collapse; margin: 12px 0; min-width: 100%; }
-      .editor th, .editor td { border: 1px solid #cbd5e5; padding: 8px 10px; min-width: 80px; }
+      .editor table { width: 100%; max-width: 100%; table-layout: fixed; border-collapse: collapse; margin: 12px 0; }
+      .editor th, .editor td { min-width: 0; border: 1px solid #cbd5e5; padding: 8px 10px; overflow-wrap: anywhere; word-break: break-word; }
       .editor th { background: #eaf0ff; color: #101d38; }
       .editor img { max-width: 100%; border-radius: 12px; }
       .veil { position: fixed; inset: 0; background: #0a142c66; display: grid; place-items: center; padding: 24px; }
@@ -220,8 +221,10 @@ export default function RichNoteEditor({ noteId, markdown, onChange, onFinish, r
       .dialog-actions button { flex: 1; height: 47px; border-radius: 13px; border: 1px solid #e5eaf3; background: white; color: #101d38; font-weight: 700; }
       .dialog-actions .primary { background: #1749e8; color: white; border-color: #1749e8; }
     `}</style>
-    <div className="tools" role="toolbar" aria-label="Note formatting">
-      {tools.map((tool) => <button key={tool.title} type="button" className="tool" title={tool.title} aria-label={tool.title} onMouseDown={(event) => event.preventDefault()} onClick={tool.action}>{tool.label}</button>)}
+    <div className="toolbar-rail">
+      <div className="tools" role="toolbar" aria-label="Note formatting">
+        {tools.map((tool) => <button key={tool.title} type="button" className="tool" title={tool.title} aria-label={tool.title} onMouseDown={(event) => event.preventDefault()} onClick={tool.action}>{tool.label}</button>)}
+      </div>
     </div>
     <div className="body-scroll"><div ref={editor} className="editor" contentEditable suppressContentEditableWarning role="textbox" aria-label="Note body" aria-multiline="true" onInput={emitChange} onKeyUp={rememberSelection} onMouseUp={rememberSelection} onTouchEnd={rememberSelection} /></div>
     {tableOpen && <div className="veil"><div className="dialog">

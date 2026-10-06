@@ -353,7 +353,7 @@ function Editor({ note, saving, onChange, onClose, onDelete }: { note: Note; sav
         <TextInput value={note.title} onChangeText={(title) => onChange({ title })} placeholder="Give this note a name" placeholderTextColor="#A3AEC2" style={styles.titleInput} multiline returnKeyType="next" blurOnSubmit={false} />
         <View style={styles.editorRule}><View style={styles.editorRuleAccent} /></View>
       </View>
-      <View style={{ flex: 1, minHeight: 0 }}><RichNoteEditor ref={richEditor} noteId={note._id} markdown={note.body} onChange={async (body) => onChange({ body })} onFinish={async (body) => onClose(body)} dom={{ style: { flex: 1 } }} /></View>
+      <View style={{ flex: 1, minHeight: 0, width: "100%" }}><RichNoteEditor ref={richEditor} noteId={note._id} markdown={note.body} onChange={async (body) => onChange({ body })} onFinish={async (body) => onClose(body)} dom={{ style: { flex: 1, width: "100%" } }} /></View>
     </KeyboardAvoidingView>
   </SafeAreaView>;
 }
