@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Svg, { Circle, Path } from "react-native-svg";
 import RichNoteEditor from "../components/RichNoteEditor";
 import {
-  ActivityIndicator, Alert, Animated, Keyboard, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, ScrollView, StyleSheet, UIManager, useWindowDimensions,
+  ActivityIndicator, Alert, Animated, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
   Text, TextInput, View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -103,7 +103,6 @@ function NotesExperience({
   const nativeCanCollapseHeaderRef = useRef(false);
   const nativeCanRestoreHeaderRef = useRef(false);
   const lastNativeScrollOffsetRef = useRef(0);
-  const [nativeHeaderCollapsed, setNativeHeaderCollapsed] = useState(false);
   const headerHeight = headerProgress.interpolate({
     inputRange: [0, 1],
     outputRange: [insets.top + 162, insets.top + 43],
@@ -234,9 +233,14 @@ function NotesExperience({
   };
   const deleteNote = () => { if (active) requestDelete(active); };
 
-  useEffect(() => {
-    if (Platform.OS === "android") UIManager.setLayoutAnimationEnabledExperimental?.(true);
-  }, []);
+  const animateNativeHeader = (toValue: number) => {
+    headerProgress.stopAnimation();
+    Animated.timing(headerProgress, {
+      toValue,
+      duration: 240,
+      useNativeDriver: false,
+    }).start();
+  };
 
   const onHomeScroll = (event: any) => {
     const offsetY = event.nativeEvent.contentOffset.y;
@@ -253,8 +257,7 @@ function NotesExperience({
     ) {
       nativeHeaderCollapsedRef.current = true;
       nativeCanCollapseHeaderRef.current = false;
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setNativeHeaderCollapsed(true);
+      animateNativeHeader(1);
     } else if (
       nativeHeaderCollapsedRef.current &&
       nativeCanRestoreHeaderRef.current &&
@@ -263,8 +266,7 @@ function NotesExperience({
     ) {
       nativeHeaderCollapsedRef.current = false;
       nativeCanRestoreHeaderRef.current = false;
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setNativeHeaderCollapsed(false);
+      animateNativeHeader(0);
     }
 
     lastNativeScrollOffsetRef.current = offsetY;
@@ -279,8 +281,7 @@ function NotesExperience({
     if (nativeHeaderCollapsedRef.current && offsetY <= 2) {
       nativeHeaderCollapsedRef.current = false;
       nativeCanRestoreHeaderRef.current = false;
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setNativeHeaderCollapsed(false);
+      animateNativeHeader(0);
     }
   };
 
@@ -289,21 +290,21 @@ function NotesExperience({
       <StatusBar style="light" />
       <Animated.View style={[styles.homeHeader, {
         paddingTop: insets.top + 8,
-        paddingBottom: Platform.OS === "web" ? headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [35, 12] }) : nativeHeaderCollapsed ? 12 : 35,
-        height: Platform.OS === "web" ? headerHeight : nativeHeaderCollapsed ? insets.top + 43 : insets.top + 162,
+        paddingBottom: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [35, 12] }),
+        height: headerHeight,
       }]}>
-        <Animated.View style={[styles.brandLine, { marginBottom: Platform.OS === "web" ? headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [31, 0] }) : nativeHeaderCollapsed ? 0 : 31 }]}>
+        <Animated.View style={[styles.brandLine, { marginBottom: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [31, 0] }) }]}>
           <View style={styles.brandMark}><View style={styles.brandMarkInner} /></View><Text style={styles.brand}>noted</Text><View style={styles.brandDot} />
         </Animated.View>
         <Animated.View style={{
-          height: Platform.OS === "web" ? heroHeight : nativeHeaderCollapsed ? 0 : 70,
-          opacity: Platform.OS === "web" ? headerCollapse.interpolate({ inputRange: [0, 0.7, 1], outputRange: [1, 0, 0] }) : nativeHeaderCollapsed ? 0 : 1,
+          height: heroHeight,
+          opacity: headerCollapse.interpolate({ inputRange: [0, 0.7, 1], outputRange: [1, 0, 0] }),
           overflow: "hidden",
         }}>
           <Animated.Text style={[styles.homeTitle, {
-            fontSize: Platform.OS === "web" ? headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [37, 24] }) : 37,
-            lineHeight: Platform.OS === "web" ? headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [43, 30] }) : 43,
-            letterSpacing: Platform.OS === "web" ? headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [-1.25, -0.5] }) : -1.25,
+            fontSize: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [37, 24] }),
+            lineHeight: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [43, 30] }),
+            letterSpacing: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [-1.25, -0.5] }),
           }]}>Your notes<Text style={styles.titleDot}>.</Text></Animated.Text>
           <Text style={styles.homeSubtitle}>A little space for everything on your mind.</Text>
         </Animated.View>
