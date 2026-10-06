@@ -8,6 +8,7 @@ type Props = {
   flushSignal: number;
   onChange: (markdown: string) => Promise<void>;
   onFinish: (markdown: string) => Promise<void>;
+  onReady: () => void;
   dom?: import('expo/dom').DOMProps;
 };
 
@@ -127,7 +128,7 @@ function ToolIcon({ name }: { name: ToolIconName }) {
   return <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24" {...shared}>{drawing}</svg>;
 }
 
-export default function RichNoteEditor({ noteId, markdown, flushSignal, onChange, onFinish }: Props) {
+export default function RichNoteEditor({ noteId, markdown, flushSignal, onChange, onFinish, onReady }: Props) {
   const editor = useRef<HTMLDivElement>(null);
   const savedRange = useRef<Range | null>(null);
   const loadedNote = useRef<string | null>(null);
@@ -143,7 +144,8 @@ export default function RichNoteEditor({ noteId, markdown, flushSignal, onChange
     if (loadedNote.current === noteId || !editor.current) return;
     loadedNote.current = noteId;
     editor.current.innerHTML = markdownToHtml(markdown);
-  }, [noteId, markdown]);
+    onReady();
+  }, [noteId, markdown, onReady]);
 
   useEffect(() => {
     if (flushSignal <= lastFlushSignal.current) return;

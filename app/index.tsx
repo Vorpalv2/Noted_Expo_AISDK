@@ -374,7 +374,7 @@ function Editor({ note, saving, onChange, onClose, onDelete }: { note: Note; sav
         <View style={styles.editorRule}><View style={styles.editorRuleAccent} /></View>
       </View>
       <View style={{ flex: 1, minHeight: 0, width: "100%" }}>
-        <RichNoteEditor noteId={note._id} markdown={note.body} flushSignal={flushSignal} onChange={async (body) => onChange({ body })} onFinish={async (body) => onClose(body)} dom={{ style: { flex: 1, width: "100%" }, onLoad: () => setEditorLoaded(true) }} />
+        <RichNoteEditor noteId={note._id} markdown={note.body} flushSignal={flushSignal} onChange={async (body) => onChange({ body })} onFinish={async (body) => onClose(body)} onReady={() => setEditorLoaded(true)} dom={{ style: { flex: 1, width: "100%" } }} />
         {!editorLoaded && <View pointerEvents="none" style={styles.editorLoading}><ActivityIndicator size="large" color={COLORS.blue} /></View>}
       </View>
     </KeyboardAvoidingView>
