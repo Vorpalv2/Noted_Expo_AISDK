@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Svg, { Circle, Path } from "react-native-svg";
 import RichNoteEditor from "../components/RichNoteEditor";
 import {
-  Alert, Animated, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
+  ActivityIndicator, Alert, Animated, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
   Text, TextInput, View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -361,6 +361,7 @@ function PinIcon({ color, size = 18 }: { color: string; size?: number }) {
 
 function Editor({ note, saving, onChange, onClose, onDelete }: { note: Note; saving: boolean; onChange: (part: Partial<Note>) => void; onClose: (latestBody?: string) => void; onDelete: () => void }) {
   const [flushSignal, setFlushSignal] = useState(0);
+  const [editorLoaded, setEditorLoaded] = useState(Platform.OS === "web");
   return <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
     <KeyboardAvoidingView style={styles.editor} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.editorNav}>
@@ -372,7 +373,10 @@ function Editor({ note, saving, onChange, onClose, onDelete }: { note: Note; sav
         <TextInput value={note.title} onChangeText={(title) => onChange({ title })} placeholder="Give this note a name" placeholderTextColor="#A3AEC2" style={styles.titleInput} multiline returnKeyType="next" blurOnSubmit={false} />
         <View style={styles.editorRule}><View style={styles.editorRuleAccent} /></View>
       </View>
-      <View style={{ flex: 1, minHeight: 0, width: "100%" }}><RichNoteEditor key={note._id} noteId={note._id} markdown={note.body} flushSignal={flushSignal} onChange={async (body) => onChange({ body })} onFinish={async (body) => onClose(body)} dom={{ style: { flex: 1, width: "100%" } }} /></View>
+      <View style={{ flex: 1, minHeight: 0, width: "100%" }}>
+        <RichNoteEditor noteId={note._id} markdown={note.body} flushSignal={flushSignal} onChange={async (body) => onChange({ body })} onFinish={async (body) => onClose(body)} dom={{ style: { flex: 1, width: "100%" }, onLoad: () => setEditorLoaded(true) }} />
+        {!editorLoaded && <View pointerEvents="none" style={styles.editorLoading}><ActivityIndicator size="large" color={COLORS.blue} /></View>}
+      </View>
     </KeyboardAvoidingView>
   </SafeAreaView>;
 }
@@ -444,7 +448,7 @@ const styles = StyleSheet.create({
   emptyTitle: { color: "white", fontSize: 32, lineHeight: 36, fontWeight: "800", letterSpacing: -1, alignSelf: "center", textAlign: "center" }, emptyBody: { color: "#D8E3FF", textAlign: "center", fontSize: 13.5, lineHeight: 20, marginTop: 12, marginHorizontal: 13 }, emptyButton: { height: 51, borderRadius: 15, backgroundColor: "white", alignSelf: "stretch", marginTop: 25, alignItems: "center", justifyContent: "center", flexDirection: "row" }, emptyButtonText: { color: COLORS.blue, fontSize: 14, fontWeight: "700" }, emptyButtonArrow: { color: COLORS.blue, fontSize: 16, marginLeft: 10, marginTop: -2 },
   noResults: { alignItems: "center", paddingTop: 78 }, noResultsTitle: { color: COLORS.ink, fontWeight: "700", fontSize: 19 }, noResultsBody: { color: COLORS.muted, fontSize: 13, marginTop: 7 },
   loadingState: { alignItems: "center", paddingTop: 90 }, loadingText: { color: COLORS.muted, fontSize: 14 }, busyVeil: { position: "absolute", bottom: 94, alignSelf: "center", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: COLORS.ink }, busyText: { color: "white", fontSize: 12 },
-  editor: { flex: 1 }, editorNav: { height: 59, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 22, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line }, backButton: { flexDirection: "row", alignItems: "center", minWidth: 95 }, backArrow: { color: COLORS.blue, fontSize: 32, lineHeight: 34, marginRight: 4, fontWeight: "300", marginTop: -3 }, backLabel: { color: COLORS.blue, fontSize: 14, fontWeight: "600" }, saveStatus: { flexDirection: "row", alignItems: "center" }, saveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#63C9A1", marginRight: 6 }, saveDotBusy: { backgroundColor: COLORS.yellow }, saveLabel: { color: COLORS.muted, fontSize: 11 }, moreButton: { minWidth: 40, alignItems: "flex-end" }, moreGlyph: { fontSize: 23, color: COLORS.muted, letterSpacing: 1, marginTop: -12 },
+  editor: { flex: 1 }, editorLoading: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.background, zIndex: 2 }, editorNav: { height: 59, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 22, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line }, backButton: { flexDirection: "row", alignItems: "center", minWidth: 95 }, backArrow: { color: COLORS.blue, fontSize: 32, lineHeight: 34, marginRight: 4, fontWeight: "300", marginTop: -3 }, backLabel: { color: COLORS.blue, fontSize: 14, fontWeight: "600" }, saveStatus: { flexDirection: "row", alignItems: "center" }, saveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#63C9A1", marginRight: 6 }, saveDotBusy: { backgroundColor: COLORS.yellow }, saveLabel: { color: COLORS.muted, fontSize: 11 }, moreButton: { minWidth: 40, alignItems: "flex-end" }, moreGlyph: { fontSize: 23, color: COLORS.muted, letterSpacing: 1, marginTop: -12 },
   titleInput: { color: COLORS.ink, fontSize: 24, lineHeight: 30, fontWeight: "700", letterSpacing: -0.7, padding: 0, minHeight: 38 },
   editorRule: { height: 1, backgroundColor: COLORS.line, marginTop: 14, marginBottom: 13 }, editorRuleAccent: { width: 35, height: 2, backgroundColor: COLORS.blue, marginTop: -1 },
 
