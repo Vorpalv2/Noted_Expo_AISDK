@@ -409,7 +409,7 @@ function markdownExcerpt(markdown: string) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.background },
-  homeRoot: { backgroundColor: COLORS.blue },
+  homeRoot: { backgroundColor: COLORS.background },
   homeBody: { flex: 1, backgroundColor: COLORS.background },
   homeHeader: { backgroundColor: COLORS.blue, paddingHorizontal: 25, paddingTop: 8, paddingBottom: 35, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
   brandLine: { flexDirection: "row", alignItems: "center", marginBottom: 31 },
