@@ -27,6 +27,7 @@ const COLORS = {
   blue: "#1749E8", blueDark: "#1038C5", ink: "#101D38", muted: "#75829C",
   line: "#E5EAF3", surface: "#FFFFFF", background: "#F8FAFE", pale: "#EAF0FF", yellow: "#FFD765",
 };
+type NoteActionMenu = { note: Note; x: number; y: number };
 
 const starterNotes: Note[] = [
   { _id: "sample-1", title: "A slower morning", body: "Leave the phone in the other room. Make coffee, open the windows, and give the day a few quiet minutes before it starts asking for things.", pinned: true, createdAt: Date.now() - 7200000, updatedAt: Date.now() - 7200000 },
@@ -97,7 +98,7 @@ function NotesExperience({
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState("");
   const [active, setActive] = useState<Note | null>(null);
-  const [actionTarget, setActionTarget] = useState<Note | null>(null);
+  const [actionMenu, setActionMenu] = useState<NoteActionMenu | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Note | null>(null);
   const [deleteError, setDeleteError] = useState("");
   const [deleting, setDeleting] = useState(false);
@@ -150,6 +151,7 @@ function NotesExperience({
   const handleTogglePin = (id: string) => {
     Promise.resolve(togglePin(id)).catch(() => Alert.alert("Couldn’t update this note", "Check your connection and try again."));
   };
+  const showNoteActions = (note: Note, x: number, y: number) => setActionMenu({ note, x, y });
   const requestDelete = (note: Note) => { setDeleteError(""); setDeleteTarget(note); };
   const confirmDelete = async () => {
     if (!deleteTarget || deleting) return;
@@ -193,8 +195,8 @@ function NotesExperience({
         ) : filtered.pinned.length + filtered.recent.length === 0 ? (
           <View style={styles.noResults}><Text style={styles.noResultsTitle}>Nothing found</Text><Text style={styles.noResultsBody}>Try another word or phrase.</Text></View>
         ) : <>
-          {filtered.pinned.length > 0 && <PinnedSection notes={filtered.pinned} open={setActive} togglePin={handleTogglePin} showActions={setActionTarget} />}
-          {filtered.recent.length > 0 && <RecentSection notes={filtered.recent} open={setActive} togglePin={handleTogglePin} onDelete={requestDelete} showActions={setActionTarget} divided={filtered.pinned.length > 0} />}
+          {filtered.pinned.length > 0 && <PinnedSection notes={filtered.pinned} open={setActive} togglePin={handleTogglePin} showActions={showNoteActions} />}
+          {filtered.recent.length > 0 && <RecentSection notes={filtered.recent} open={setActive} togglePin={handleTogglePin} onDelete={requestDelete} showActions={showNoteActions} divided={filtered.pinned.length > 0} />}
           <Text style={styles.listFootnote}>{notes.length} {notes.length === 1 ? "note" : "notes"} · kept just for you</Text>
         </>}
       </ScrollView>
@@ -214,7 +216,7 @@ function NotesExperience({
       {busy && <View style={styles.busyVeil}><Text style={styles.busyText}>Opening a fresh page…</Text></View>}
       </View>
       </KeyboardAvoidingView>
-      <NoteActions note={actionTarget} onCancel={() => setActionTarget(null)} onEdit={() => { if (actionTarget) setActive(actionTarget); setActionTarget(null); }} onDelete={() => { if (actionTarget) requestDelete(actionTarget); setActionTarget(null); }} />
+      <NoteActions menu={actionMenu} onCancel={() => setActionMenu(null)} onEdit={() => { if (actionMenu) setActive(actionMenu.note); setActionMenu(null); }} onPin={() => { if (actionMenu) handleTogglePin(actionMenu.note._id); setActionMenu(null); }} onDelete={() => { if (actionMenu) requestDelete(actionMenu.note); setActionMenu(null); }} />
       <DeleteConfirmation note={deleteTarget} error={deleteError} deleting={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} />
     </SafeAreaView>
   );
@@ -230,7 +232,7 @@ function cardColorsFor(id: string) {
   return noteCardColors[stableHash % noteCardColors.length];
 }
 
-function PinnedSection({ notes, open, togglePin, showActions }: { notes: Note[]; open: (note: Note) => void; togglePin: (id: string) => void | Promise<unknown>; showActions: (note: Note) => void }) {
+function PinnedSection({ notes, open, togglePin, showActions }: { notes: Note[]; open: (note: Note) => void; togglePin: (id: string) => void | Promise<unknown>; showActions: (note: Note, x: number, y: number) => void }) {
   const { width } = useWindowDimensions();
   const cardWidth = width > 640 ? Math.min(620, (width - 96) / 2) : Math.max(148, Math.min(174, (width - 60) / 2));
   const cardHeight = Math.min(800, Math.max(230, cardWidth * 1.29));
@@ -272,7 +274,7 @@ function PinnedSection({ notes, open, togglePin, showActions }: { notes: Note[];
           <Pressable onPress={() => togglePin(note._id)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Unpin note" style={styles.cardPinMark}>
             <PinIcon color={COLORS.blue} size={25 * cardScale} />
           </Pressable>
-          <Pressable onPress={() => open(note)} onLongPress={() => showActions(note)} delayLongPress={2000} style={({ pressed }) => [styles.pinnedCardMain, pressed && styles.cardPressed]}>
+          <Pressable onPress={() => open(note)} onLongPress={(event) => showActions(note, event.nativeEvent.pageX, event.nativeEvent.pageY)} delayLongPress={1000} style={({ pressed }) => [styles.pinnedCardMain, pressed && styles.cardPressed]}>
             <Text numberOfLines={2} style={[styles.cardTitle, { color: colors.ink, fontSize: 22 * cardScale, lineHeight: 27 * cardScale }]}>{note.title.trim() || "Untitled note"}</Text>
             <Text numberOfLines={3} style={[styles.cardPreview, { color: colors.muted, fontSize: 15 * cardScale, lineHeight: 22 * cardScale }]}>{markdownExcerpt(note.body) || "A new page, ready when you are."}</Text>
             <Text style={[styles.cardTime, { color: colors.muted, fontSize: 14 * cardScale }]}>{cardDate(note.updatedAt)}</Text>
@@ -283,14 +285,14 @@ function PinnedSection({ notes, open, togglePin, showActions }: { notes: Note[];
   </View>;
 }
 
-function RecentSection({ notes, open, togglePin, onDelete, showActions, divided }: { notes: Note[]; open: (note: Note) => void; togglePin: (id: string) => void | Promise<unknown>; onDelete: (note: Note) => void; showActions: (note: Note) => void; divided: boolean }) {
+function RecentSection({ notes, open, togglePin, onDelete, showActions, divided }: { notes: Note[]; open: (note: Note) => void; togglePin: (id: string) => void | Promise<unknown>; onDelete: (note: Note) => void; showActions: (note: Note, x: number, y: number) => void; divided: boolean }) {
   return <View style={[styles.section, divided && styles.recentSection]}>
     <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>Recent</Text><Text style={styles.sectionCount}>{String(notes.length).padStart(2, "0")}</Text></View>
     {notes.map((note) => <RecentNoteRow key={note._id} note={note} open={open} togglePin={togglePin} onDelete={onDelete} showActions={showActions} />)}
   </View>;
 }
 
-function RecentNoteRow({ note, open, togglePin, onDelete, showActions }: { note: Note; open: (note: Note) => void; togglePin: (id: string) => void | Promise<unknown>; onDelete: (note: Note) => void; showActions: (note: Note) => void }) {
+function RecentNoteRow({ note, open, togglePin, onDelete, showActions }: { note: Note; open: (note: Note) => void; togglePin: (id: string) => void | Promise<unknown>; onDelete: (note: Note) => void; showActions: (note: Note, x: number, y: number) => void }) {
   const { width } = useWindowDimensions();
   const actionWidth = Math.max(120, (width - 46) * 0.5);
   const [swiped, setSwiped] = useState(false);
@@ -308,7 +310,7 @@ function RecentNoteRow({ note, open, togglePin, onDelete, showActions }: { note:
     renderRightActions={(actionProgress, __, swipeable) => <SwipeAction width={actionWidth} visible={actionsVisible} actionProgress={actionProgress} label="Delete" kind="delete" onPress={() => { swipeable.close(); onDelete(note); }} />}
   >
     <View style={[styles.noteRow, swiped && styles.noteRowSwiped]}>
-      <Pressable onPress={() => open(note)} onLongPress={() => showActions(note)} delayLongPress={2000} style={({ pressed }) => [styles.noteCopy, pressed && styles.rowPressed]}>
+      <Pressable onPress={() => open(note)} onLongPress={(event) => showActions(note, event.nativeEvent.pageX, event.nativeEvent.pageY)} delayLongPress={1000} style={({ pressed }) => [styles.noteCopy, pressed && styles.rowPressed]}>
         <Text numberOfLines={1} style={styles.noteTitle}>{note.title.trim() || "Untitled note"}</Text>
         <Text numberOfLines={1} style={styles.notePreview}>{markdownExcerpt(note.body) || "A new page, ready when you are."}</Text>
       </Pressable>
@@ -331,25 +333,28 @@ function SwipeAction({ width, visible, actionProgress, label, kind, onPress }: {
   </View>;
 }
 
-function NoteActions({ note, onCancel, onEdit, onDelete }: { note: Note | null; onCancel: () => void; onEdit: () => void; onDelete: () => void }) {
+function NoteActions({ menu, onCancel, onEdit, onPin, onDelete }: { menu: NoteActionMenu | null; onCancel: () => void; onEdit: () => void; onPin: () => void; onDelete: () => void }) {
   const insets = useSafeAreaInsets();
-  return <Modal visible={!!note} transparent animationType="fade" onRequestClose={onCancel} statusBarTranslucent>
+  const { width, height } = useWindowDimensions();
+  const menuWidth = 198;
+  const menuHeight = 72;
+  const position = menu ? {
+    left: Math.min(Math.max(8, menu.x - menuWidth / 2), Math.max(8, width - menuWidth - 8)),
+    top: Math.min(Math.max(insets.top + 8, menu.y - menuHeight / 2), Math.max(insets.top + 8, height - insets.bottom - menuHeight - 8)),
+  } : { left: 8, top: 8 };
+  return <Modal visible={!!menu} transparent animationType="fade" onRequestClose={onCancel} statusBarTranslucent>
     <View style={styles.noteActionsOverlay}>
       <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} accessibilityLabel="Close note actions" />
-      <View style={[styles.noteActionsCard, { paddingBottom: Math.max(20, insets.bottom + 10) }]}>
-        <View style={styles.noteActionsHandle} />
-        <Text style={styles.noteActionsEyebrow}>NOTE ACTIONS</Text>
-        <Text numberOfLines={1} style={styles.noteActionsTitle}>{note?.title.trim() || "Untitled note"}</Text>
-        <View style={styles.noteActionsButtons}>
-          <Pressable onPress={onEdit} accessibilityRole="button" style={({ pressed }) => [styles.noteActionButton, styles.noteActionEdit, pressed && styles.deletePressed]}>
-            <Text style={styles.noteActionEditGlyph}>↗</Text>
-            <Text style={styles.noteActionEditText}>Edit note</Text>
-          </Pressable>
-          <Pressable onPress={onDelete} accessibilityRole="button" style={({ pressed }) => [styles.noteActionButton, styles.noteActionDelete, pressed && styles.deletePressed]}>
-            <Text style={styles.noteActionDeleteGlyph}>×</Text>
-            <Text style={styles.noteActionDeleteText}>Delete</Text>
-          </Pressable>
-        </View>
+      <View style={[styles.noteActionBar, position]}>
+        <Pressable onPress={onEdit} accessibilityRole="button" accessibilityLabel="Edit note" style={({ pressed }) => [styles.noteActionCircle, styles.noteActionEdit, pressed && styles.noteActionPressed]}>
+          <Svg width={23} height={23} viewBox="0 0 24 24" fill="none"><Path d="m4 16.8-.9 4.1 4.1-.9L19 8.2 15.8 5 4 16.8Z" stroke={COLORS.blue} strokeWidth={1.8} strokeLinejoin="round" /><Path d="m13.9 6.9 3.2 3.2" stroke={COLORS.blue} strokeWidth={1.8} strokeLinecap="round" /></Svg>
+        </Pressable>
+        <Pressable onPress={onPin} accessibilityRole="button" accessibilityLabel={menu?.note.pinned ? "Unpin note" : "Pin note"} style={({ pressed }) => [styles.noteActionCircle, styles.noteActionPin, pressed && styles.noteActionPressed]}>
+          <PinIcon color={COLORS.blue} size={23} />
+        </Pressable>
+        <Pressable onPress={onDelete} accessibilityRole="button" accessibilityLabel="Delete note" style={({ pressed }) => [styles.noteActionCircle, styles.noteActionDelete, pressed && styles.noteActionPressed]}>
+          <Svg width={23} height={23} viewBox="0 0 24 24" fill="none"><Path d="M4.5 7h15M9 7V4.5h6V7m2.5 0-.8 13h-9L7 7m3 3v7m4-7v7" stroke="#D64A55" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" /></Svg>
+        </Pressable>
       </View>
     </View>
   </Modal>;
@@ -478,14 +483,10 @@ const styles = StyleSheet.create({
   titleInput: { color: COLORS.ink, fontSize: 24, lineHeight: 30, fontWeight: "700", letterSpacing: -0.7, padding: 0, minHeight: 38 },
   editorRule: { height: 1, backgroundColor: COLORS.line, marginTop: 14, marginBottom: 13 }, editorRuleAccent: { width: 35, height: 2, backgroundColor: COLORS.blue, marginTop: -1 },
 
-  noteActionsOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(10, 20, 44, 0.38)" },
-  noteActionsCard: { paddingHorizontal: 24, paddingTop: 12, paddingBottom: 22, borderTopLeftRadius: 27, borderTopRightRadius: 27, backgroundColor: COLORS.background, borderTopWidth: 2, borderColor: COLORS.ink },
-  noteActionsHandle: { alignSelf: "center", width: 38, height: 4, borderRadius: 2, backgroundColor: "#C8D1E0", marginBottom: 19 },
-  noteActionsEyebrow: { color: COLORS.blue, fontSize: 10, fontWeight: "800", letterSpacing: 1.5 },
-  noteActionsTitle: { color: COLORS.ink, fontFamily: "serif", fontSize: 22, lineHeight: 28, fontWeight: "600", marginTop: 5, marginBottom: 19 },
-  noteActionsButtons: { flexDirection: "row", gap: 12 },
-  noteActionButton: { flex: 1, minHeight: 58, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9, borderRadius: 16, borderWidth: 2, borderColor: COLORS.ink },
-  noteActionEdit: { backgroundColor: COLORS.blue }, noteActionEditGlyph: { color: "white", fontSize: 22, fontWeight: "600", marginTop: -3 }, noteActionEditText: { color: "white", fontSize: 15, fontWeight: "700" },
-  noteActionDelete: { backgroundColor: "#FFF0F1" }, noteActionDeleteGlyph: { color: "#D64A55", fontSize: 27, lineHeight: 29, fontWeight: "400", marginTop: -2 }, noteActionDeleteText: { color: "#B92E3A", fontSize: 15, fontWeight: "700" },
+  noteActionsOverlay: { flex: 1, backgroundColor: "transparent" },
+  noteActionBar: { position: "absolute", width: 198, height: 72, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 9, borderRadius: 24, borderWidth: 2, borderColor: COLORS.ink, backgroundColor: "white", shadowColor: COLORS.ink, shadowOpacity: 0.2, shadowRadius: 0, shadowOffset: { width: 4, height: 4 }, elevation: 7 },
+  noteActionCircle: { width: 50, height: 50, alignItems: "center", justifyContent: "center", borderRadius: 25, borderWidth: 2, borderColor: COLORS.ink, shadowColor: COLORS.ink, shadowOpacity: 1, shadowRadius: 0, shadowOffset: { width: 2, height: 2 }, elevation: 2 },
+  noteActionEdit: { backgroundColor: "#EAF0FF" }, noteActionPin: { backgroundColor: "#FFF0A8" }, noteActionDelete: { backgroundColor: "#FFF0F1" },
+  noteActionPressed: { opacity: 0.7, transform: [{ scale: 0.93 }] },
 
 });
