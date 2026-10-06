@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Svg, { Circle, Path } from "react-native-svg";
 import RichNoteEditor from "../components/RichNoteEditor";
 import {
-  ActivityIndicator, Alert, Animated, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
+  ActivityIndicator, Alert, Animated, Keyboard, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, ScrollView, StyleSheet, UIManager, useWindowDimensions,
   Text, TextInput, View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -98,14 +98,15 @@ function NotesExperience({
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
   const editorTranslateX = useRef(new Animated.Value(screenWidth)).current;
-  const homeScrollY = useRef(new Animated.Value(0)).current;
-  const headerHeight = homeScrollY.interpolate({
-    inputRange: [0, 90],
+  const headerProgress = useRef(new Animated.Value(0)).current;
+  const [nativeHeaderCollapsed, setNativeHeaderCollapsed] = useState(false);
+  const headerHeight = headerProgress.interpolate({
+    inputRange: [0, 1],
     outputRange: [insets.top + 162, insets.top + 43],
     extrapolate: "clamp",
   });
-  const headerCollapse = homeScrollY.interpolate({ inputRange: [0, 90], outputRange: [0, 1], extrapolate: "clamp" });
-  const heroHeight = homeScrollY.interpolate({ inputRange: [0, 90], outputRange: [70, 0], extrapolate: "clamp" });
+  const headerCollapse = headerProgress;
+  const heroHeight = headerProgress.interpolate({ inputRange: [0, 1], outputRange: [70, 0], extrapolate: "clamp" });
   const [search, setSearch] = useState("");
   const [active, setActive] = useState<Note | null>(null);
   const [actionMenu, setActionMenu] = useState<NoteActionMenu | null>(null);
@@ -229,22 +230,44 @@ function NotesExperience({
   };
   const deleteNote = () => { if (active) requestDelete(active); };
 
+  useEffect(() => {
+    if (Platform.OS === "android") UIManager.setLayoutAnimationEnabledExperimental?.(true);
+  }, []);
+
+  const onHomeScroll = (event: any) => {
+    const offsetY = event.nativeEvent.contentOffset.y;
+    if (Platform.OS === "web") {
+      headerProgress.setValue(Math.max(0, Math.min(1, offsetY / 90)));
+      return;
+    }
+
+    const shouldCollapse = nativeHeaderCollapsed ? offsetY > 1 : offsetY > 24;
+    if (shouldCollapse === nativeHeaderCollapsed) return;
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setNativeHeaderCollapsed(shouldCollapse);
+    Animated.timing(headerProgress, {
+      toValue: shouldCollapse ? 1 : 0,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  };
+
   const homeScreen = (
     <SafeAreaView style={[styles.safe, styles.homeRoot]} edges={["left", "right"]}>
       <StatusBar style="light" />
       <Animated.View style={[styles.homeHeader, {
         paddingTop: insets.top + 8,
-        paddingBottom: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [35, 12] }),
-        height: headerHeight,
+        paddingBottom: Platform.OS === "web" ? headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [35, 12] }) : nativeHeaderCollapsed ? 12 : 35,
+        height: Platform.OS === "web" ? headerHeight : nativeHeaderCollapsed ? insets.top + 43 : insets.top + 162,
       }]}>
-        <Animated.View style={[styles.brandLine, { marginBottom: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [31, 0] }) }]}>
+        <Animated.View style={[styles.brandLine, { marginBottom: Platform.OS === "web" ? headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [31, 0] }) : nativeHeaderCollapsed ? 0 : 31 }]}>
           <View style={styles.brandMark}><View style={styles.brandMarkInner} /></View><Text style={styles.brand}>noted</Text><View style={styles.brandDot} />
         </Animated.View>
-        <Animated.View style={{ height: heroHeight, opacity: headerCollapse.interpolate({ inputRange: [0, 0.7, 1], outputRange: [1, 0, 0] }), overflow: "hidden" }}>
+        <Animated.View style={{ height: Platform.OS === "web" ? heroHeight : nativeHeaderCollapsed ? 0 : 70, opacity: headerCollapse.interpolate({ inputRange: [0, 0.7, 1], outputRange: [1, 0, 0] }), overflow: "hidden" }}>
           <Animated.Text style={[styles.homeTitle, {
-            fontSize: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [37, 24] }),
-            lineHeight: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [43, 30] }),
-            letterSpacing: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [-1.25, -0.5] }),
+            fontSize: Platform.OS === "web" ? headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [37, 24] }) : 37,
+            lineHeight: Platform.OS === "web" ? headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [43, 30] }) : 43,
+            letterSpacing: Platform.OS === "web" ? headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [-1.25, -0.5] }) : -1.25,
           }]}>Your notes<Text style={styles.titleDot}>.</Text></Animated.Text>
           <Text style={styles.homeSubtitle}>A little space for everything on your mind.</Text>
         </Animated.View>
@@ -252,14 +275,16 @@ function NotesExperience({
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.homeBody}>
       {!loading && notes.length > 0 && filtered.pinned.length > 0 && filtered.pinned.length + filtered.recent.length > 0 && (
-        <PinnedSection notes={filtered.pinned} open={setActive} togglePin={handleTogglePin} showActions={showNoteActions} />
+        <View style={styles.pinnedSectionFrame}>
+          <PinnedSection notes={filtered.pinned} open={setActive} togglePin={handleTogglePin} showActions={showNoteActions} />
+        </View>
       )}
       <Animated.ScrollView
         contentContainerStyle={styles.listContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
-        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: homeScrollY } } }], { useNativeDriver: false })}
+        onScroll={onHomeScroll}
       >
         {loading ? <View style={styles.loadingState}><Text style={styles.loadingText}>Gathering your thoughts…</Text></View> : notes.length === 0 ? (
           <View style={styles.emptyWrap}>
@@ -553,6 +578,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.background },
   homeRoot: { backgroundColor: COLORS.background },
   homeBody: { flex: 1, backgroundColor: COLORS.background },
+  pinnedSectionFrame: { paddingHorizontal: 23, paddingTop: 16 },
   homeHeader: { backgroundColor: COLORS.blue, paddingHorizontal: 25, paddingTop: 8, paddingBottom: 35, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
   brandLine: { flexDirection: "row", alignItems: "center", marginBottom: 31 },
   brandMark: { width: 23, height: 23, borderRadius: 8, backgroundColor: "white", justifyContent: "center", alignItems: "center", transform: [{ rotate: "-8deg" }] },
