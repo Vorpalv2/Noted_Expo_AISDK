@@ -6,7 +6,7 @@ import { Swipeable } from "react-native-gesture-handler";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Svg, { Path } from "react-native-svg";
 import {
-  Alert, Animated, Easing, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
+  Alert, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
   Text, TextInput, View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -273,16 +273,6 @@ function RecentNoteRow({ note, open, togglePin, onDelete }: { note: Note; open: 
   const actionWidth = Math.max(120, (width - 46) * 0.5);
   const [swiped, setSwiped] = useState(false);
   const [actionsVisible, setActionsVisible] = useState(false);
-  const swipeVisualProgress = useRef(new Animated.Value(0)).current;
-  const fadeActionsAndRowBack = () => {
-    swipeVisualProgress.stopAnimation();
-    Animated.timing(swipeVisualProgress, { toValue: 0, duration: 135, easing: Easing.out(Easing.quad), useNativeDriver: true }).start(({ finished }) => {
-      if (finished) {
-        setActionsVisible(false);
-        setSwiped(false);
-      }
-    });
-  };
   return <Swipeable
     friction={1}
     leftThreshold={actionWidth * 0.55}
@@ -290,38 +280,27 @@ function RecentNoteRow({ note, open, togglePin, onDelete }: { note: Note; open: 
     overshootLeft={false}
     overshootRight={false}
     onSwipeableWillOpen={() => setSwiped(true)}
-    onSwipeableOpen={() => {
-      setActionsVisible(true);
-      swipeVisualProgress.stopAnimation();
-      Animated.timing(swipeVisualProgress, { toValue: 1, duration: 145, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-    }}
-    onSwipeableWillClose={fadeActionsAndRowBack}
-    renderLeftActions={(actionProgress, __, swipeable) => <SwipeAction width={actionWidth} visible={actionsVisible} actionProgress={actionProgress} progress={swipeVisualProgress} label="Pin" kind="pin" onPress={() => { swipeable.close(); togglePin(note._id); }} />}
-    renderRightActions={(actionProgress, __, swipeable) => <SwipeAction width={actionWidth} visible={actionsVisible} actionProgress={actionProgress} progress={swipeVisualProgress} label="Delete" kind="delete" onPress={() => { swipeable.close(); onDelete(note); }} />}
+    onSwipeableOpen={() => setActionsVisible(true)}
+    onSwipeableWillClose={() => { setActionsVisible(false); setSwiped(false); }}
+    renderLeftActions={(actionProgress, __, swipeable) => <SwipeAction width={actionWidth} visible={actionsVisible} actionProgress={actionProgress} label="Pin" kind="pin" onPress={() => { swipeable.close(); togglePin(note._id); }} />}
+    renderRightActions={(actionProgress, __, swipeable) => <SwipeAction width={actionWidth} visible={actionsVisible} actionProgress={actionProgress} label="Delete" kind="delete" onPress={() => { swipeable.close(); onDelete(note); }} />}
   >
-    <Animated.View style={[styles.noteRow, swiped && styles.noteRowSwiped, {
-      opacity: swipeVisualProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 0.84] }),
-      transform: [{ scale: swipeVisualProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 0.99] }) }],
-    }]}>
+    <View style={[styles.noteRow, swiped && styles.noteRowSwiped]}>
       <Pressable onPress={() => open(note)} style={({ pressed }) => [styles.noteCopy, pressed && styles.rowPressed]}>
         <Text numberOfLines={1} style={styles.noteTitle}>{note.title.trim() || "Untitled note"}</Text>
         <Text numberOfLines={1} style={styles.notePreview}>{note.body.trim() || "A new page, ready when you are."}</Text>
       </Pressable>
       <View style={styles.noteMeta}><Text style={styles.noteTime}>{relativeTime(note.updatedAt)}</Text><Pressable onPress={() => togglePin(note._id)} hitSlop={12} accessibilityRole="button" accessibilityLabel="Pin note" style={styles.pinButton}><PinIcon color={COLORS.blue} /></Pressable></View>
-    </Animated.View>
+    </View>
   </Swipeable>;
 }
 
-function SwipeAction({ width, visible, actionProgress, progress, label, kind, onPress }: { width: number; visible: boolean; actionProgress: Animated.AnimatedInterpolation<number>; progress: Animated.Value; label: string; kind: "pin" | "delete"; onPress: () => void }) {
+function SwipeAction({ width, visible, actionProgress, label, kind, onPress }: { width: number; visible: boolean; actionProgress: Animated.AnimatedInterpolation<number>; label: string; kind: "pin" | "delete"; onPress: () => void }) {
   const actionStyle = kind === "pin" ? styles.swipePin : styles.swipeDelete;
   const edgeGap = 10;
   const fullyOpen = actionProgress.interpolate({ inputRange: [0, 0.999, 1], outputRange: [0, 0, 1], extrapolate: "clamp" });
-  const actionOpacity = Animated.multiply(fullyOpen, progress);
   return <View style={[styles.swipeActionSlot, { width }]}>
-    <Animated.View style={[styles.swipeAction, { width: width - edgeGap, marginLeft: kind === "delete" ? edgeGap : 0, marginRight: kind === "pin" ? edgeGap : 0 }, visible ? actionStyle : styles.swipeHidden, {
-      opacity: actionOpacity,
-      transform: [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1] }) }],
-    }]}>
+    <Animated.View style={[styles.swipeAction, { width: width - edgeGap, marginLeft: kind === "delete" ? edgeGap : 0, marginRight: kind === "pin" ? edgeGap : 0, opacity: fullyOpen }, visible ? actionStyle : styles.swipeHidden]}>
       {visible && <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${label} note`} style={styles.swipeActionButton}>
         {kind === "pin" ? <PinIcon color="white" size={21} /> : <Text style={styles.swipeDeleteGlyph}>×</Text>}
         <Text style={styles.swipeActionLabel}>{label}</Text>
