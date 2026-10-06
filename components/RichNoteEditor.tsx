@@ -140,6 +140,7 @@ export default function RichNoteEditor({ noteId, markdown, flushSignal, safeBott
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkText, setLinkText] = useState('');
   const [linkUrl, setLinkUrl] = useState('https://');
+  const [activeTools, setActiveTools] = useState<Set<ToolIconName>>(() => new Set());
 
   useEffect(() => {
     if (loadedNote.current === noteId || !editor.current) return;
@@ -157,6 +158,33 @@ export default function RichNoteEditor({ noteId, markdown, flushSignal, safeBott
   const emitChange = () => {
     if (editor.current) void onChange(markdownFromNode(editor.current).trimEnd());
   };
+  const syncActiveTools = () => {
+    if (!editor.current) return;
+    const active = new Set<ToolIconName>();
+    if (document.queryCommandState('bold')) active.add('bold');
+    if (document.queryCommandState('italic')) active.add('italic');
+    if (document.queryCommandState('strikeThrough')) active.add('strike');
+
+    const block = document.queryCommandValue('formatBlock').toLowerCase().replace(/[<>]/g, '');
+    if (block === 'p' || block === 'div') active.add('body');
+    if (block === 'h1') active.add('title');
+    if (block === 'h2' || block === 'h3') active.add('heading');
+    if (block === 'blockquote') active.add('quote');
+
+    const selection = window.getSelection();
+    const anchor = selection?.anchorNode;
+    const element = anchor instanceof HTMLElement ? anchor : anchor?.parentElement;
+    const node = element && editor.current.contains(element) ? element : null;
+    const listItem = node?.closest('li');
+    const checklist = !!listItem && /^[☐☑]/.test(listItem.textContent?.trim() ?? '');
+    if (checklist) active.add('checklist');
+    else if (document.queryCommandState('insertUnorderedList')) active.add('bullets');
+    if (document.queryCommandState('insertOrderedList')) active.add('numbered');
+    if (node?.closest('code')) active.add('code');
+    if (node?.closest('a')) active.add('link');
+    if (node?.closest('table')) active.add('table');
+    setActiveTools(active);
+  };
   const rememberSelection = () => {
     const selection = window.getSelection();
     if (selection?.rangeCount && editor.current?.contains(selection.anchorNode)) savedRange.current = selection.getRangeAt(0).cloneRange();
@@ -166,10 +194,24 @@ export default function RichNoteEditor({ noteId, markdown, flushSignal, safeBott
     const selection = window.getSelection();
     if (selection && savedRange.current) { selection.removeAllRanges(); selection.addRange(savedRange.current); }
   };
-  const command = (name: string, value?: string) => {
+  const command = (name: string, value?: string, tool?: ToolIconName, toggle = false) => {
     restoreSelection();
     document.execCommand(name, false, value);
     rememberSelection();
+    syncActiveTools();
+    if (tool) {
+      setActiveTools((current) => {
+        const next = new Set(current);
+        if (toggle && next.has(tool)) next.delete(tool);
+        else next.add(tool);
+        if (tool === 'body' || tool === 'title' || tool === 'heading' || tool === 'quote') {
+          for (const format of ['body', 'title', 'heading', 'quote'] as ToolIconName[]) {
+            if (format !== tool) next.delete(format);
+          }
+        }
+        return next;
+      });
+    }
     emitChange();
   };
   const insertTable = () => {
@@ -186,20 +228,21 @@ export default function RichNoteEditor({ noteId, markdown, flushSignal, safeBott
     restoreSelection();
     document.execCommand('insertHTML', false, `<a href="${escapeHtml(url)}">${escapeHtml(linkText.trim() || url)}</a>`);
     setLinkOpen(false);
+    syncActiveTools();
     emitChange();
   };
   const tools: { icon: ToolIconName; title: string; action: () => void }[] = [
-    { icon: 'bold', title: 'Bold', action: () => command('bold') },
-    { icon: 'italic', title: 'Italic', action: () => command('italic') },
-    { icon: 'strike', title: 'Strikethrough', action: () => command('strikeThrough') },
-    { icon: 'body', title: 'Body text', action: () => command('formatBlock', 'p') },
-    { icon: 'title', title: 'Large heading', action: () => command('formatBlock', 'h1') },
-    { icon: 'heading', title: 'Heading', action: () => command('formatBlock', 'h2') },
-    { icon: 'bullets', title: 'Bullet list', action: () => command('insertUnorderedList') },
-    { icon: 'numbered', title: 'Numbered list', action: () => command('insertOrderedList') },
-    { icon: 'checklist', title: 'Checklist', action: () => command('insertHTML', '<ul><li>☐ &nbsp;</li></ul><p><br></p>') },
-    { icon: 'quote', title: 'Quote', action: () => command('formatBlock', 'blockquote') },
-    { icon: 'code', title: 'Code', action: () => command('insertHTML', '<code>code</code>') },
+    { icon: 'bold', title: 'Bold', action: () => command('bold', undefined, 'bold', true) },
+    { icon: 'italic', title: 'Italic', action: () => command('italic', undefined, 'italic', true) },
+    { icon: 'strike', title: 'Strikethrough', action: () => command('strikeThrough', undefined, 'strike', true) },
+    { icon: 'body', title: 'Body text', action: () => command('formatBlock', 'p', 'body') },
+    { icon: 'title', title: 'Large heading', action: () => command('formatBlock', 'h1', 'title') },
+    { icon: 'heading', title: 'Heading', action: () => command('formatBlock', 'h2', 'heading') },
+    { icon: 'bullets', title: 'Bullet list', action: () => command('insertUnorderedList', undefined, 'bullets', true) },
+    { icon: 'numbered', title: 'Numbered list', action: () => command('insertOrderedList', undefined, 'numbered', true) },
+    { icon: 'checklist', title: 'Checklist', action: () => command('insertHTML', '<ul><li>☐ &nbsp;</li></ul><p><br></p>', 'checklist') },
+    { icon: 'quote', title: 'Quote', action: () => command('formatBlock', 'blockquote', 'quote') },
+    { icon: 'code', title: 'Code', action: () => command('insertHTML', '<code>code</code>', 'code') },
     { icon: 'link', title: 'Insert link', action: () => { rememberSelection(); setLinkText(window.getSelection()?.toString() ?? ''); setLinkOpen(true); } },
     { icon: 'divider', title: 'Divider', action: () => command('insertHorizontalRule') },
     { icon: 'table', title: 'Insert table', action: () => { rememberSelection(); setTableOpen(true); } },
@@ -210,12 +253,13 @@ export default function RichNoteEditor({ noteId, markdown, flushSignal, safeBott
       html, body, #root { margin: 0; width: 100%; max-width: 100%; min-width: 0; height: 100%; overflow-x: hidden; background: #f8fafe; }
       * { box-sizing: border-box; }
       .rich-shell { position: relative; width: 100%; max-width: 100%; min-width: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: #34415b; }
-      .toolbar-rail { position: absolute; z-index: 10; left: 16px; right: 16px; bottom: ${safeBottom + 12}px; min-width: 0; overflow: hidden; border: 1px solid #e0e6f0; border-radius: 22px; background: rgba(255, 255, 255, .96); box-shadow: 0 8px 25px rgba(18, 39, 83, .14), 0 2px 5px rgba(18, 39, 83, .08); backdrop-filter: blur(16px); }
+      .toolbar-rail { position: fixed; z-index: 10; left: 16px; right: 16px; bottom: max(8px, ${safeBottom}px); min-width: 0; overflow: hidden; border: 1px solid #e0e6f0; border-radius: 22px; background: rgba(255, 255, 255, .96); box-shadow: 0 8px 25px rgba(18, 39, 83, .14), 0 2px 5px rgba(18, 39, 83, .08); backdrop-filter: blur(16px); }
       .tools { display: flex; width: 100%; min-width: 0; gap: 8px; padding: 8px; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch; touch-action: pan-x; }
       .tools::-webkit-scrollbar { display: none; }
       button { font: inherit; cursor: pointer; }
       .tool { flex: none; display: grid; place-items: center; width: 46px; height: 46px; padding: 0; border: 0; border-radius: 16px; background: transparent; color: #53617a; -webkit-tap-highlight-color: transparent; }
       .tool:active { background: #eaf0ff; color: #1749e8; }
+      .tool.active, .tool[aria-pressed="true"] { background: #dce7ff; color: #1749e8; box-shadow: inset 0 0 0 1px #9db8ff; }
       .tool:focus-visible { outline: 2px solid #1749e8; outline-offset: -2px; }
       .body-scroll { flex: 1; min-width: 0; min-height: 0; width: 100%; overflow-x: hidden; overflow-y: auto; padding: 16px 25px ${safeBottom + 78}px; }
       .editor { width: 100%; min-width: 0; max-width: 100%; min-height: 100%; outline: none; font-size: 17px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
@@ -247,10 +291,10 @@ export default function RichNoteEditor({ noteId, markdown, flushSignal, safeBott
       .dialog-actions button { flex: 1; height: 47px; border-radius: 13px; border: 1px solid #e5eaf3; background: white; color: #101d38; font-weight: 700; }
       .dialog-actions .primary { background: #1749e8; color: white; border-color: #1749e8; }
     `}</style>
-    <div className="body-scroll"><div ref={editor} className="editor" contentEditable suppressContentEditableWarning role="textbox" aria-label="Note body" aria-multiline="true" onInput={emitChange} onKeyUp={rememberSelection} onMouseUp={rememberSelection} onTouchEnd={rememberSelection} /></div>
+    <div className="body-scroll"><div ref={editor} className="editor" contentEditable suppressContentEditableWarning role="textbox" aria-label="Note body" aria-multiline="true" onInput={emitChange} onKeyUp={() => { rememberSelection(); syncActiveTools(); }} onMouseUp={() => { rememberSelection(); syncActiveTools(); }} onTouchEnd={() => { rememberSelection(); syncActiveTools(); }} /></div>
     <div className="toolbar-rail">
       <div className="tools" role="toolbar" aria-label="Note formatting">
-        {tools.map((tool) => <button key={tool.title} type="button" className="tool" title={tool.title} aria-label={tool.title} onMouseDown={(event) => event.preventDefault()} onClick={tool.action}><ToolIcon name={tool.icon} /></button>)}
+        {tools.map((tool) => <button key={tool.title} type="button" className={`tool${activeTools.has(tool.icon) ? ' active' : ''}`} title={tool.title} aria-label={tool.title} aria-pressed={activeTools.has(tool.icon)} onMouseDown={(event) => event.preventDefault()} onClick={tool.action}><ToolIcon name={tool.icon} /></button>)}
       </div>
     </div>
     {tableOpen && <div className="veil"><div className="dialog">
