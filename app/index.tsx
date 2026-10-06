@@ -6,7 +6,7 @@ import { Swipeable } from "react-native-gesture-handler";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Svg, { Path } from "react-native-svg";
 import {
-  Alert, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
+  Alert, Animated, Easing, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
   Text, TextInput, View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -276,7 +276,7 @@ function RecentNoteRow({ note, open, togglePin, onDelete }: { note: Note; open: 
   const swipeVisualProgress = useRef(new Animated.Value(0)).current;
   const fadeActionsAndRowBack = () => {
     swipeVisualProgress.stopAnimation();
-    Animated.timing(swipeVisualProgress, { toValue: 0, duration: 170, useNativeDriver: true }).start(({ finished }) => {
+    Animated.timing(swipeVisualProgress, { toValue: 0, duration: 135, easing: Easing.out(Easing.quad), useNativeDriver: true }).start(({ finished }) => {
       if (finished) {
         setActionsVisible(false);
         setSwiped(false);
@@ -293,7 +293,7 @@ function RecentNoteRow({ note, open, togglePin, onDelete }: { note: Note; open: 
     onSwipeableOpen={() => {
       setActionsVisible(true);
       swipeVisualProgress.stopAnimation();
-      Animated.spring(swipeVisualProgress, { toValue: 1, damping: 19, stiffness: 230, mass: 0.8, useNativeDriver: true }).start();
+      Animated.timing(swipeVisualProgress, { toValue: 1, duration: 145, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
     }}
     onSwipeableWillClose={fadeActionsAndRowBack}
     renderLeftActions={(actionProgress, __, swipeable) => <SwipeAction width={actionWidth} visible={actionsVisible} actionProgress={actionProgress} progress={swipeVisualProgress} label="Pin" kind="pin" onPress={() => { swipeable.close(); togglePin(note._id); }} />}
