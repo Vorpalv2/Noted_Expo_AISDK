@@ -4,7 +4,7 @@ import { useMutation, useQuery } from "convex/react";
 import { StatusBar } from "expo-status-bar";
 import { Swipeable } from "react-native-gesture-handler";
 import { useEffect, useMemo, useRef, useState } from "react";
-import Svg, { Path } from "react-native-svg";
+import Svg, { Circle, Path } from "react-native-svg";
 import RichNoteEditor, { type RichNoteEditorRef } from "../components/RichNoteEditor";
 import {
   Alert, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
@@ -170,11 +170,6 @@ function NotesExperience({
         <Text style={styles.homeSubtitle}>A little space for everything on your mind.</Text>
       </View>
       <View style={styles.homeBody}>
-      <View style={styles.searchWrap}>
-        <Text style={styles.searchIcon}>⌕</Text>
-        <TextInput value={search} onChangeText={setSearch} placeholder="Find a note" placeholderTextColor="#98A3B6" style={styles.searchInput} returnKeyType="search" />
-        {search.length > 0 && <Pressable onPress={() => setSearch("")} hitSlop={12}><Text style={styles.clearSearch}>×</Text></Pressable>}
-      </View>
       <ScrollView contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {loading ? <View style={styles.loadingState}><Text style={styles.loadingText}>Gathering your thoughts…</Text></View> : notes.length === 0 ? (
           <View style={styles.emptyWrap}>
@@ -191,7 +186,19 @@ function NotesExperience({
           <Text style={styles.listFootnote}>{notes.length} {notes.length === 1 ? "note" : "notes"} · kept just for you</Text>
         </>}
       </ScrollView>
-      {notes.length > 0 && <Pressable style={({ pressed }) => [styles.fab, pressed && styles.pressed]} onPress={createNote} accessibilityLabel="Create a note"><Text style={styles.fabPlus}>+</Text></Pressable>}
+      {notes.length > 0 && <View style={[styles.bottomSearchCreate, { bottom: insets.bottom + 14 }]}>
+        <View style={styles.bottomSearchWrap}>
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" style={styles.bottomSearchIcon}>
+            <Circle cx={10.8} cy={10.8} r={6.8} stroke={COLORS.blue} strokeWidth={2} />
+            <Path d="m16 16 4.5 4.5" stroke={COLORS.blue} strokeWidth={2} strokeLinecap="round" />
+          </Svg>
+          <TextInput value={search} onChangeText={setSearch} placeholder="Find a note" placeholderTextColor="#98A3B6" style={styles.searchInput} returnKeyType="search" />
+          {search.length > 0 && <Pressable onPress={() => setSearch("")} hitSlop={12} accessibilityLabel="Clear search"><Text style={styles.clearSearch}>×</Text></Pressable>}
+        </View>
+        <Pressable style={({ pressed }) => [styles.bottomCreateButton, pressed && styles.pressed]} onPress={createNote} accessibilityRole="button" accessibilityLabel="Create a note">
+          <Svg width={25} height={25} viewBox="0 0 24 24" fill="none"><Path d="M12 5v14M5 12h14" stroke="white" strokeWidth={2} strokeLinecap="round" /></Svg>
+        </Pressable>
+      </View>}
       {busy && <View style={styles.busyVeil}><Text style={styles.busyText}>Opening a fresh page…</Text></View>}
       </View>
       <DeleteConfirmation note={deleteTarget} error={deleteError} deleting={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} />
@@ -399,9 +406,11 @@ const styles = StyleSheet.create({
   brand: { color: "white", fontSize: 17, fontWeight: "800", letterSpacing: -0.5, marginLeft: 9 }, brandDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: COLORS.yellow, marginLeft: 3, marginTop: 9 },
   homeTitle: { color: "white", fontSize: 37, fontWeight: "800", letterSpacing: -1.25, lineHeight: 43 }, titleDot: { color: COLORS.yellow },
   homeSubtitle: { color: "#D9E4FF", fontSize: 14, marginTop: 5, letterSpacing: 0.05 },
-  searchWrap: { height: 51, marginHorizontal: 22, marginTop: -18, backgroundColor: "white", borderRadius: 15, flexDirection: "row", alignItems: "center", paddingHorizontal: 15, shadowColor: "#0C2D88", shadowOpacity: 0.12, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 4, zIndex: 2 },
-  searchIcon: { color: COLORS.blue, fontSize: 25, transform: [{ rotate: "-18deg" }], marginRight: 8, marginTop: -4 }, searchInput: { flex: 1, fontSize: 15, color: COLORS.ink, paddingVertical: 0 }, clearSearch: { color: COLORS.muted, fontSize: 23, paddingLeft: 8 },
-  listContent: { flexGrow: 1, paddingHorizontal: 23, paddingTop: 25, paddingBottom: 38 },
+  bottomSearchCreate: { position: "absolute", left: 22, right: 22, flexDirection: "row", alignItems: "center", gap: 11, zIndex: 5 },
+  bottomSearchWrap: { flex: 1, height: 58, backgroundColor: "rgba(255,255,255,0.97)", borderRadius: 20, borderWidth: 1, borderColor: "#E4EAF4", flexDirection: "row", alignItems: "center", paddingHorizontal: 17, shadowColor: "#0C2D88", shadowOpacity: 0.14, shadowRadius: 18, shadowOffset: { width: 0, height: 7 }, elevation: 7 },
+  bottomSearchIcon: { marginRight: 10 }, searchInput: { flex: 1, minWidth: 0, fontSize: 15, color: COLORS.ink, paddingVertical: 0 }, clearSearch: { color: COLORS.muted, fontSize: 23, paddingLeft: 8 },
+  bottomCreateButton: { width: 58, height: 58, borderRadius: 20, backgroundColor: COLORS.blue, alignItems: "center", justifyContent: "center", shadowColor: COLORS.blue, shadowOpacity: 0.3, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 7 },
+  listContent: { flexGrow: 1, paddingHorizontal: 23, paddingTop: 25, paddingBottom: 132 },
   section: { marginBottom: 27 }, sectionHeading: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }, sectionTitle: { color: COLORS.ink, fontSize: 17, fontWeight: "700", letterSpacing: -0.4 }, sectionCount: { color: "#8995A8", fontWeight: "500", marginRight: 14 }, sectionHeadingRight: { flexDirection: "row", alignItems: "center" }, sectionChevron: { color: "#8B97AA", lineHeight: 36, fontWeight: "300", paddingHorizontal: 4, marginTop: -3 },
   pinnedCarousel: { paddingRight: 12 },
   pinnedCard: { borderRadius: 24, borderWidth: 2, borderColor: COLORS.ink, padding: 16, shadowColor: "#173B91", shadowOpacity: 0.14, shadowRadius: 14, shadowOffset: { width: 0, height: 7 }, elevation: 4 }, pinnedCardMain: { flex: 1 }, cardPressed: { opacity: 0.78, transform: [{ scale: 0.985 }] },
@@ -417,7 +426,7 @@ const styles = StyleSheet.create({
   deleteTitle: { color: COLORS.ink, fontFamily: "serif", fontSize: 25, lineHeight: 31, fontWeight: "600", letterSpacing: -0.45 }, deleteBody: { color: COLORS.muted, fontSize: 15, lineHeight: 22, marginTop: 8 }, deleteError: { color: "#B92E3A", fontSize: 13, lineHeight: 18, marginTop: 12 },
   deleteButtons: { flexDirection: "row", gap: 10, marginTop: 23 }, deleteCancel: { flex: 1, height: 48, borderRadius: 14, borderWidth: 1, borderColor: COLORS.line, alignItems: "center", justifyContent: "center" }, deleteCancelText: { color: COLORS.ink, fontSize: 14, fontWeight: "600" }, deleteConfirm: { flex: 1, height: 48, borderRadius: 14, backgroundColor: "#D64A55", alignItems: "center", justifyContent: "center" }, deleteConfirmText: { color: "white", fontSize: 14, fontWeight: "700" }, deletePressed: { opacity: 0.85, transform: [{ scale: 0.98 }] }, deleteDisabled: { opacity: 0.6 },
   listFootnote: { textAlign: "center", color: "#A5B0C1", fontSize: 11, marginTop: 0 },
-  fab: { position: "absolute", right: 23, bottom: 26, width: 59, height: 59, borderRadius: 21, backgroundColor: COLORS.blue, justifyContent: "center", alignItems: "center", shadowColor: COLORS.blue, shadowOpacity: 0.28, shadowRadius: 13, shadowOffset: { width: 0, height: 6 }, elevation: 6 }, pressed: { opacity: 0.82, transform: [{ scale: 0.97 }] }, fabPlus: { fontSize: 34, fontWeight: "300", color: "white", marginTop: -3 },
+  pressed: { opacity: 0.82, transform: [{ scale: 0.97 }] },
   emptyWrap: { flex: 1, minHeight: 510, borderRadius: 24, backgroundColor: COLORS.blue, marginTop: 8, marginHorizontal: -23, paddingHorizontal: 31, paddingTop: 44, paddingBottom: 35, alignItems: "flex-start", justifyContent: "center" },
   paperArt: { width: 104, height: 94, marginBottom: 32, alignSelf: "center", marginTop: 4 }, paperShadow: { position: "absolute", width: 58, height: 74, left: 30, top: 9, borderRadius: 11, backgroundColor: "#0D36C8", transform: [{ rotate: "9deg" }] }, paper: { width: 61, height: 77, left: 20, top: 4, borderRadius: 10, backgroundColor: "white", paddingTop: 26, paddingHorizontal: 12, transform: [{ rotate: "-8deg" }] }, paperFold: { position: "absolute", top: 0, right: 0, width: 19, height: 19, borderBottomLeftRadius: 8, backgroundColor: "#DDE6FF" }, paperLine: { height: 3, borderRadius: 2, width: "100%", backgroundColor: "#D7E0F2", marginBottom: 7 }, sparkle: { position: "absolute", color: COLORS.yellow, fontSize: 30, right: 3, top: 0 },
   emptyTitle: { color: "white", fontSize: 32, lineHeight: 36, fontWeight: "800", letterSpacing: -1, alignSelf: "center", textAlign: "center" }, emptyBody: { color: "#D8E3FF", textAlign: "center", fontSize: 13.5, lineHeight: 20, marginTop: 12, marginHorizontal: 13 }, emptyButton: { height: 51, borderRadius: 15, backgroundColor: "white", alignSelf: "stretch", marginTop: 25, alignItems: "center", justifyContent: "center", flexDirection: "row" }, emptyButtonText: { color: COLORS.blue, fontSize: 14, fontWeight: "700" }, emptyButtonArrow: { color: COLORS.blue, fontSize: 16, marginLeft: 10, marginTop: -2 },
