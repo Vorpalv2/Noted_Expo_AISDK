@@ -255,7 +255,6 @@ function NotesExperience({
       nativeCanCollapseHeaderRef.current = false;
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setNativeHeaderCollapsed(true);
-      Animated.timing(headerProgress, { toValue: 1, duration: 220, useNativeDriver: true }).start();
     } else if (
       nativeHeaderCollapsedRef.current &&
       nativeCanRestoreHeaderRef.current &&
@@ -266,7 +265,6 @@ function NotesExperience({
       nativeCanRestoreHeaderRef.current = false;
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setNativeHeaderCollapsed(false);
-      Animated.timing(headerProgress, { toValue: 0, duration: 220, useNativeDriver: true }).start();
     }
 
     lastNativeScrollOffsetRef.current = offsetY;
@@ -283,7 +281,6 @@ function NotesExperience({
       nativeCanRestoreHeaderRef.current = false;
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setNativeHeaderCollapsed(false);
-      Animated.timing(headerProgress, { toValue: 0, duration: 220, useNativeDriver: true }).start();
     }
   };
 
@@ -298,7 +295,11 @@ function NotesExperience({
         <Animated.View style={[styles.brandLine, { marginBottom: Platform.OS === "web" ? headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [31, 0] }) : nativeHeaderCollapsed ? 0 : 31 }]}>
           <View style={styles.brandMark}><View style={styles.brandMarkInner} /></View><Text style={styles.brand}>noted</Text><View style={styles.brandDot} />
         </Animated.View>
-        <Animated.View style={{ height: Platform.OS === "web" ? heroHeight : nativeHeaderCollapsed ? 0 : 70, opacity: headerCollapse.interpolate({ inputRange: [0, 0.7, 1], outputRange: [1, 0, 0] }), overflow: "hidden" }}>
+        <Animated.View style={{
+          height: Platform.OS === "web" ? heroHeight : nativeHeaderCollapsed ? 0 : 70,
+          opacity: Platform.OS === "web" ? headerCollapse.interpolate({ inputRange: [0, 0.7, 1], outputRange: [1, 0, 0] }) : nativeHeaderCollapsed ? 0 : 1,
+          overflow: "hidden",
+        }}>
           <Animated.Text style={[styles.homeTitle, {
             fontSize: Platform.OS === "web" ? headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [37, 24] }) : 37,
             lineHeight: Platform.OS === "web" ? headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [43, 30] }) : 43,
