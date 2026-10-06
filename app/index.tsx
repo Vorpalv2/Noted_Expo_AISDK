@@ -310,13 +310,8 @@ function NotesExperience({
       </Animated.View>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.homeBody}>
-      {!loading && notes.length > 0 && filtered.pinned.length > 0 && filtered.pinned.length + filtered.recent.length > 0 && (
-        <View style={styles.pinnedSectionFrame}>
-          <PinnedSection notes={filtered.pinned} open={setActive} togglePin={handleTogglePin} showActions={showNoteActions} />
-        </View>
-      )}
       <Animated.ScrollView
-        style={styles.recentNotesScroll}
+        style={styles.notesScroll}
         contentContainerStyle={styles.listContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -334,6 +329,7 @@ function NotesExperience({
         ) : filtered.pinned.length + filtered.recent.length === 0 ? (
           <View style={styles.noResults}><Text style={styles.noResultsTitle}>Nothing found</Text><Text style={styles.noResultsBody}>Try another word or phrase.</Text></View>
         ) : <>
+          {filtered.pinned.length > 0 && <PinnedSection notes={filtered.pinned} open={setActive} togglePin={handleTogglePin} showActions={showNoteActions} />}
           {filtered.recent.length > 0 && <RecentSection notes={filtered.recent} open={setActive} togglePin={handleTogglePin} onDelete={requestDelete} showActions={showNoteActions} divided={filtered.pinned.length > 0} />}
           <Text style={styles.listFootnote}>{notes.length} {notes.length === 1 ? "note" : "notes"} · kept just for you</Text>
         </>}
@@ -619,8 +615,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.background },
   homeRoot: { backgroundColor: COLORS.background },
   homeBody: { flex: 1, minHeight: 0, backgroundColor: COLORS.background },
-  pinnedSectionFrame: { flexShrink: 0, paddingHorizontal: 23, paddingTop: 16, zIndex: 1, elevation: 1 },
-  recentNotesScroll: { flex: 1, minHeight: 0 },
+  notesScroll: { flex: 1, minHeight: 0 },
   homeHeader: { backgroundColor: COLORS.blue, paddingHorizontal: 25, paddingTop: 8, paddingBottom: 35, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
   brandLine: { flexDirection: "row", alignItems: "center", marginBottom: 31 },
   brandMark: { width: 23, height: 23, borderRadius: 8, backgroundColor: "white", justifyContent: "center", alignItems: "center", transform: [{ rotate: "-8deg" }] },
