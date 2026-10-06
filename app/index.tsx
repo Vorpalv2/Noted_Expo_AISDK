@@ -270,16 +270,18 @@ function RecentSection({ notes, open, togglePin, onDelete, divided }: { notes: N
 
 function RecentNoteRow({ note, open, togglePin, onDelete }: { note: Note; open: (note: Note) => void; togglePin: (id: string) => void | Promise<unknown>; onDelete: (note: Note) => void }) {
   const [swiped, setSwiped] = useState(false);
+  const [actionsVisible, setActionsVisible] = useState(false);
   return <Swipeable
-    friction={2}
-    leftThreshold={36}
-    rightThreshold={36}
+    friction={1.5}
+    leftThreshold={68}
+    rightThreshold={68}
     overshootLeft={false}
     overshootRight={false}
     onSwipeableWillOpen={() => setSwiped(true)}
-    onSwipeableWillClose={() => setSwiped(false)}
-    renderLeftActions={(_, __, swipeable) => <SwipeAction label="Pin" kind="pin" onPress={() => { swipeable.close(); togglePin(note._id); }} />}
-    renderRightActions={(_, __, swipeable) => <SwipeAction label="Delete" kind="delete" onPress={() => { swipeable.close(); onDelete(note); }} />}
+    onSwipeableOpen={() => setActionsVisible(true)}
+    onSwipeableWillClose={() => { setSwiped(false); setActionsVisible(false); }}
+    renderLeftActions={(_, __, swipeable) => <SwipeAction visible={actionsVisible} label="Pin" kind="pin" onPress={() => { swipeable.close(); togglePin(note._id); }} />}
+    renderRightActions={(_, __, swipeable) => <SwipeAction visible={actionsVisible} label="Delete" kind="delete" onPress={() => { swipeable.close(); onDelete(note); }} />}
   >
     <View style={[styles.noteRow, swiped && styles.noteRowSwiped]}>
       <Pressable onPress={() => open(note)} style={({ pressed }) => [styles.noteCopy, pressed && styles.rowPressed]}>
@@ -291,15 +293,16 @@ function RecentNoteRow({ note, open, togglePin, onDelete }: { note: Note; open: 
   </Swipeable>;
 }
 
-function SwipeAction({ label, kind, onPress }: { label: string; kind: "pin" | "delete"; onPress: () => void }) {
+function SwipeAction({ visible, label, kind, onPress }: { visible: boolean; label: string; kind: "pin" | "delete"; onPress: () => void }) {
   return <Pressable
     onPress={onPress}
+    disabled={!visible}
     accessibilityRole="button"
     accessibilityLabel={`${label} note`}
     style={[styles.swipeAction, kind === "pin" ? styles.swipePin : styles.swipeDelete]}
   >
-    {kind === "pin" ? <PinIcon color="white" size={21} /> : <Text style={styles.swipeDeleteGlyph}>×</Text>}
-    <Text style={styles.swipeActionLabel}>{label}</Text>
+    {visible && <>{kind === "pin" ? <PinIcon color="white" size={21} /> : <Text style={styles.swipeDeleteGlyph}>×</Text>}
+      <Text style={styles.swipeActionLabel}>{label}</Text></>}
   </Pressable>;
 }
 
