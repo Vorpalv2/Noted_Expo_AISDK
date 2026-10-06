@@ -342,7 +342,7 @@ function PinIcon({ color, size = 18 }: { color: string; size?: number }) {
 
 function Editor({ note, saving, onChange, onClose, onDelete }: { note: Note; saving: boolean; onChange: (part: Partial<Note>) => void; onClose: () => void; onDelete: () => void }) {
   const bodyInput = useRef<TextInput>(null);
-  const [mode, setMode] = useState<"write" | "preview">("write");
+  const [mode, setMode] = useState<"write" | "split" | "preview">("write");
   const [selection, setSelection] = useState({ start: note.body.length, end: note.body.length });
   const [tableOpen, setTableOpen] = useState(false);
   const [tableRows, setTableRows] = useState(3);
@@ -414,6 +414,13 @@ function Editor({ note, saving, onChange, onClose, onDelete }: { note: Note; sav
     }
   };
 
+  const previewPane = <View style={[styles.previewPane, mode === "split" && styles.previewPaneSplit]}>
+    <View style={styles.previewHeading}><View style={styles.previewDot} /><Text style={styles.previewHeadingText}>{mode === "split" ? "LIVE PREVIEW" : "PREVIEW"}</Text></View>
+    <ScrollView style={styles.previewScroll} contentContainerStyle={styles.previewContent} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+      <MarkdownPreview title={note.title} markdown={note.body} />
+    </ScrollView>
+  </View>;
+
   return <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
     <KeyboardAvoidingView style={styles.editor} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.editorNav}>
@@ -421,12 +428,18 @@ function Editor({ note, saving, onChange, onClose, onDelete }: { note: Note; sav
         <View style={styles.saveStatus}><View style={[styles.saveDot, saving && styles.saveDotBusy]} /><Text style={styles.saveLabel}>{saving ? "Saving" : "Saved"}</Text></View>
         <Pressable onPress={onDelete} hitSlop={12} style={styles.moreButton}><Text style={styles.moreGlyph}>···</Text></Pressable>
       </View>
-      <View style={styles.markdownTools}>
+      <View style={styles.editorViewControls}>
         <View style={styles.editorModeTabs}>
-          <Pressable onPress={() => setMode("write")} accessibilityRole="tab" accessibilityState={{ selected: mode === "write" }} style={[styles.editorModeTab, mode === "write" && styles.editorModeTabActive]}><Text style={[styles.editorModeText, mode === "write" && styles.editorModeTextActive]}>Write</Text></Pressable>
+          <Pressable onPress={() => { Keyboard.dismiss(); setMode("write"); }} accessibilityRole="tab" accessibilityState={{ selected: mode !== "preview" }} style={[styles.editorModeTab, mode !== "preview" && styles.editorModeTabActive]}><Text style={[styles.editorModeText, mode !== "preview" && styles.editorModeTextActive]}>Write</Text></Pressable>
           <Pressable onPress={() => { Keyboard.dismiss(); setMode("preview"); }} accessibilityRole="tab" accessibilityState={{ selected: mode === "preview" }} style={[styles.editorModeTab, mode === "preview" && styles.editorModeTabActive]}><Text style={[styles.editorModeText, mode === "preview" && styles.editorModeTextActive]}>Preview</Text></Pressable>
         </View>
-        {mode === "write" && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.markdownToolbar} keyboardShouldPersistTaps="always">
+        {mode !== "preview" && <Pressable onPress={() => { Keyboard.dismiss(); setMode(mode === "split" ? "write" : "split"); }} accessibilityRole="button" style={styles.showPreviewButton}>
+          <Text style={styles.showPreviewText}>{mode === "split" ? "Hide preview" : "Show preview"}</Text><Text style={styles.showPreviewGlyph}>{mode === "split" ? "⌃" : "⌄"}</Text>
+        </Pressable>}
+      </View>
+      <View style={styles.editorSplit}>
+        {mode !== "preview" && <View style={styles.writePane}>
+          <ScrollView horizontal style={styles.markdownTools} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.markdownToolbar} keyboardShouldPersistTaps="always">
           <MarkdownToolButton label="B" hint="Bold" emphasis onPress={() => format("bold")} />
           <MarkdownToolButton label="I" hint="Italic" italic onPress={() => format("italic")} />
           <MarkdownToolButton label="S̶" hint="Strikethrough" onPress={() => format("strike")} />
@@ -439,16 +452,16 @@ function Editor({ note, saving, onChange, onClose, onDelete }: { note: Note; sav
           <MarkdownToolButton label="`</>`" hint="Code" onPress={() => format("inline-code")} />
           <MarkdownToolButton label="Link" hint="Insert link" onPress={() => format("link")} />
           <MarkdownToolButton label="Table" hint="Insert table" onPress={() => format("table")} />
-        </ScrollView>}
-      </View>
-      <ScrollView style={styles.editorScroll} contentContainerStyle={styles.editorContent} keyboardShouldPersistTaps="handled">
-        {mode === "write" ? <>
+          </ScrollView>
+          <ScrollView style={styles.editorScroll} contentContainerStyle={styles.editorContent} keyboardShouldPersistTaps="handled">
           <TextInput value={note.title} onChangeText={(title) => onChange({ title })} placeholder="Give this note a name" placeholderTextColor="#A3AEC2" style={styles.titleInput} multiline returnKeyType="next" blurOnSubmit={false} />
           <View style={styles.editorRule}><View style={styles.editorRuleAccent} /></View>
           <TextInput ref={bodyInput} value={note.body} onChangeText={(body) => onChange({ body })} onSelectionChange={(event) => setSelection(event.nativeEvent.selection)} selection={selection} placeholder="Start anywhere…" placeholderTextColor="#A3AEC2" style={styles.bodyInput} multiline textAlignVertical="top" />
-        </> : <MarkdownPreview title={note.title} markdown={note.body} />}
-        <Text style={styles.editorFooter}>JUST FOR YOU  ·  {new Date(note.updatedAt).toLocaleDateString(undefined, { month: "long", day: "numeric" })}</Text>
-      </ScrollView>
+          <Text style={styles.editorFooter}>JUST FOR YOU  ·  {new Date(note.updatedAt).toLocaleDateString(undefined, { month: "long", day: "numeric" })}</Text>
+          </ScrollView>
+        </View>}
+        {(mode === "split" || mode === "preview") && previewPane}
+      </View>
     </KeyboardAvoidingView>
     <TableBuilder visible={tableOpen} rows={tableRows} columns={tableColumns} setRows={setTableRows} setColumns={setTableColumns} onCancel={() => setTableOpen(false)} onInsert={insertTable} />
   </SafeAreaView>;
@@ -554,7 +567,9 @@ const styles = StyleSheet.create({
   emptyTitle: { color: "white", fontSize: 32, lineHeight: 36, fontWeight: "800", letterSpacing: -1, alignSelf: "center", textAlign: "center" }, emptyBody: { color: "#D8E3FF", textAlign: "center", fontSize: 13.5, lineHeight: 20, marginTop: 12, marginHorizontal: 13 }, emptyButton: { height: 51, borderRadius: 15, backgroundColor: "white", alignSelf: "stretch", marginTop: 25, alignItems: "center", justifyContent: "center", flexDirection: "row" }, emptyButtonText: { color: COLORS.blue, fontSize: 14, fontWeight: "700" }, emptyButtonArrow: { color: COLORS.blue, fontSize: 16, marginLeft: 10, marginTop: -2 },
   noResults: { alignItems: "center", paddingTop: 78 }, noResultsTitle: { color: COLORS.ink, fontWeight: "700", fontSize: 19 }, noResultsBody: { color: COLORS.muted, fontSize: 13, marginTop: 7 },
   loadingState: { alignItems: "center", paddingTop: 90 }, loadingText: { color: COLORS.muted, fontSize: 14 }, busyVeil: { position: "absolute", bottom: 94, alignSelf: "center", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: COLORS.ink }, busyText: { color: "white", fontSize: 12 },
-  editor: { flex: 1 }, editorNav: { height: 59, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 22, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line }, backButton: { flexDirection: "row", alignItems: "center", minWidth: 95 }, backArrow: { color: COLORS.blue, fontSize: 32, lineHeight: 34, marginRight: 4, fontWeight: "300", marginTop: -3 }, backLabel: { color: COLORS.blue, fontSize: 14, fontWeight: "600" }, saveStatus: { flexDirection: "row", alignItems: "center" }, saveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#63C9A1", marginRight: 6 }, saveDotBusy: { backgroundColor: COLORS.yellow }, saveLabel: { color: COLORS.muted, fontSize: 11 }, moreButton: { minWidth: 40, alignItems: "flex-end" }, moreGlyph: { fontSize: 23, color: COLORS.muted, letterSpacing: 1, marginTop: -12 }, editorScroll: { flex: 1 }, editorContent: { paddingTop: 31, paddingHorizontal: 25, paddingBottom: 50, minHeight: "100%" }, titleInput: { color: COLORS.ink, fontSize: 30, lineHeight: 37, fontWeight: "700", letterSpacing: -0.9, padding: 0, minHeight: 46 }, editorRule: { height: 1, backgroundColor: COLORS.line, marginTop: 23, marginBottom: 21 }, editorRuleAccent: { width: 35, height: 2, backgroundColor: COLORS.blue, marginTop: -1 }, bodyInput: { flex: 1, color: "#34415B", fontSize: 18, lineHeight: 29, padding: 0, minHeight: 250 }, editorFooter: { color: "#A0AABD", fontSize: 10, fontWeight: "700", letterSpacing: 1.2, marginTop: 50 },
-  markdownTools: { paddingHorizontal: 22, paddingTop: 11, paddingBottom: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line }, editorModeTabs: { alignSelf: "flex-start", flexDirection: "row", backgroundColor: "#EEF2FA", padding: 3, borderRadius: 12, marginBottom: 10 }, editorModeTab: { minWidth: 75, alignItems: "center", justifyContent: "center", height: 31, borderRadius: 9 }, editorModeTabActive: { backgroundColor: "white", shadowColor: COLORS.ink, shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 1 }, editorModeText: { color: COLORS.muted, fontSize: 12, fontWeight: "600" }, editorModeTextActive: { color: COLORS.ink }, markdownToolbar: { alignItems: "center", gap: 7, paddingRight: 5 }, markdownToolButton: { minWidth: 37, height: 34, paddingHorizontal: 10, alignItems: "center", justifyContent: "center", borderRadius: 9, borderWidth: 1, borderColor: "#D9E0EC", backgroundColor: "white" }, markdownToolPressed: { backgroundColor: COLORS.pale }, markdownToolLabel: { color: COLORS.ink, fontSize: 12, fontWeight: "700" }, markdownToolBold: { fontWeight: "900" }, markdownToolItalic: { fontStyle: "italic" },
+  editor: { flex: 1 }, editorNav: { height: 59, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 22, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line }, backButton: { flexDirection: "row", alignItems: "center", minWidth: 95 }, backArrow: { color: COLORS.blue, fontSize: 32, lineHeight: 34, marginRight: 4, fontWeight: "300", marginTop: -3 }, backLabel: { color: COLORS.blue, fontSize: 14, fontWeight: "600" }, saveStatus: { flexDirection: "row", alignItems: "center" }, saveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#63C9A1", marginRight: 6 }, saveDotBusy: { backgroundColor: COLORS.yellow }, saveLabel: { color: COLORS.muted, fontSize: 11 }, moreButton: { minWidth: 40, alignItems: "flex-end" }, moreGlyph: { fontSize: 23, color: COLORS.muted, letterSpacing: 1, marginTop: -12 },
+  editorViewControls: { minHeight: 49, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 22, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line }, editorModeTabs: { alignSelf: "flex-start", flexDirection: "row", backgroundColor: "#EEF2FA", padding: 3, borderRadius: 12 }, editorModeTab: { minWidth: 75, alignItems: "center", justifyContent: "center", height: 31, borderRadius: 9 }, editorModeTabActive: { backgroundColor: "white", shadowColor: COLORS.ink, shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 1 }, editorModeText: { color: COLORS.muted, fontSize: 12, fontWeight: "600" }, editorModeTextActive: { color: COLORS.ink }, showPreviewButton: { flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: 12, height: 33, borderRadius: 10, borderWidth: 1.5, borderColor: COLORS.ink, backgroundColor: "white" }, showPreviewText: { color: COLORS.ink, fontSize: 12, fontWeight: "700" }, showPreviewGlyph: { color: COLORS.blue, fontSize: 15, fontWeight: "800", marginTop: -2 },
+  editorSplit: { flex: 1, minHeight: 0 }, writePane: { flex: 1, minHeight: 0 }, previewPane: { flex: 1, minHeight: 0 }, previewPaneSplit: { borderTopWidth: 2, borderTopColor: COLORS.ink }, previewHeading: { height: 34, flexDirection: "row", alignItems: "center", paddingHorizontal: 25, gap: 8, backgroundColor: "#F0F4FB" }, previewDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#63C9A1" }, previewHeadingText: { color: COLORS.muted, fontSize: 10, fontWeight: "800", letterSpacing: 1.2 }, previewScroll: { flex: 1 }, previewContent: { paddingHorizontal: 25, paddingTop: 16, paddingBottom: 26 },
+  markdownTools: { flexGrow: 0, height: 51, paddingHorizontal: 22, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line }, markdownToolbar: { alignItems: "center", gap: 7, paddingRight: 5 }, markdownToolButton: { minWidth: 37, height: 34, paddingHorizontal: 10, alignItems: "center", justifyContent: "center", borderRadius: 9, borderWidth: 1, borderColor: "#D9E0EC", backgroundColor: "white" }, markdownToolPressed: { backgroundColor: COLORS.pale }, markdownToolLabel: { color: COLORS.ink, fontSize: 12, fontWeight: "700" }, markdownToolBold: { fontWeight: "900" }, markdownToolItalic: { fontStyle: "italic" }, editorScroll: { flex: 1, minHeight: 0 }, editorContent: { flexGrow: 1, paddingTop: 18, paddingHorizontal: 25, paddingBottom: 18 }, titleInput: { color: COLORS.ink, fontSize: 24, lineHeight: 30, fontWeight: "700", letterSpacing: -0.7, padding: 0, minHeight: 38 }, editorRule: { height: 1, backgroundColor: COLORS.line, marginTop: 14, marginBottom: 13 }, editorRuleAccent: { width: 35, height: 2, backgroundColor: COLORS.blue, marginTop: -1 }, bodyInput: { flex: 1, color: "#34415B", fontSize: 16, lineHeight: 24, padding: 0, minHeight: 100 }, editorFooter: { color: "#A0AABD", fontSize: 10, fontWeight: "700", letterSpacing: 1.2, marginTop: 18 },
   tableOverlay: { flex: 1, backgroundColor: "rgba(10, 20, 44, 0.38)", alignItems: "center", justifyContent: "center", paddingHorizontal: 26 }, tableBuilderCard: { width: "100%", maxWidth: 390, borderRadius: 24, backgroundColor: "white", padding: 24, shadowColor: "#0A1633", shadowOpacity: 0.2, shadowRadius: 26, shadowOffset: { width: 0, height: 12 }, elevation: 12 }, tableBuilderEyebrow: { color: COLORS.blue, fontSize: 10, fontWeight: "800", letterSpacing: 1.4 }, tableBuilderTitle: { color: COLORS.ink, fontFamily: "serif", fontSize: 25, lineHeight: 31, fontWeight: "600", marginTop: 8 }, tableBuilderBody: { color: COLORS.muted, fontSize: 14, lineHeight: 21, marginTop: 5, marginBottom: 15 }, tableDimension: { minHeight: 54, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderTopWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line }, tableDimensionLabel: { color: COLORS.ink, fontSize: 14, fontWeight: "600" }, tableStepper: { flexDirection: "row", alignItems: "center", gap: 15 }, tableStepButton: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderRadius: 10, backgroundColor: COLORS.pale }, tableStepGlyph: { color: COLORS.blue, fontSize: 20, lineHeight: 23, fontWeight: "500" }, tableDimensionValue: { minWidth: 18, textAlign: "center", color: COLORS.ink, fontSize: 15, fontWeight: "700" }, tableBuilderButtons: { flexDirection: "row", gap: 10, marginTop: 20 }, tableBuilderCancel: { flex: 1, height: 47, borderRadius: 13, borderWidth: 1, borderColor: COLORS.line, alignItems: "center", justifyContent: "center" }, tableBuilderCancelText: { color: COLORS.ink, fontSize: 14, fontWeight: "600" }, tableBuilderInsert: { flex: 1, height: 47, borderRadius: 13, backgroundColor: COLORS.blue, alignItems: "center", justifyContent: "center" }, tableBuilderInsertText: { color: "white", fontSize: 14, fontWeight: "700" },
 });
