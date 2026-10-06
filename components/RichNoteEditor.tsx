@@ -7,6 +7,7 @@ type Props = {
   markdown: string;
   flushSignal: number;
   safeBottom?: number;
+  darkMode?: boolean;
   onChange: (markdown: string) => Promise<void>;
   onFinish: (markdown: string) => Promise<void>;
   onReady: () => void;
@@ -129,7 +130,7 @@ function ToolIcon({ name }: { name: ToolIconName }) {
   return <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24" {...shared}>{drawing}</svg>;
 }
 
-export default function RichNoteEditor({ noteId, markdown, flushSignal, safeBottom = 0, onChange, onFinish, onReady }: Props) {
+export default function RichNoteEditor({ noteId, markdown, flushSignal, safeBottom = 0, darkMode = false, onChange, onFinish, onReady }: Props) {
   const editor = useRef<HTMLDivElement>(null);
   const savedRange = useRef<Range | null>(null);
   const loadedNote = useRef<string | null>(null);
@@ -268,54 +269,62 @@ export default function RichNoteEditor({ noteId, markdown, flushSignal, safeBott
     { icon: 'table', title: 'Insert table', action: () => { rememberSelection(); setTableOpen(true); } },
   ];
 
+  const theme = darkMode ? {
+    page: '#080a0f', surface: '#141821', ink: '#f4f6fb', muted: '#b0bacb', line: '#2a3140', pale: '#1b2c50',
+    toolbar: 'rgba(20, 24, 33, .96)', toolbarBorder: '#303849', tool: '#c2ccdc', active: '#24385d', activeBorder: '#4567a9',
+  } : {
+    page: '#f8fafe', surface: '#ffffff', ink: '#101d38', muted: '#75829c', line: '#e5eaf3', pale: '#eaf0ff',
+    toolbar: 'rgba(255, 255, 255, .96)', toolbarBorder: '#e0e6f0', tool: '#53617a', active: '#dce7ff', activeBorder: '#9db8ff',
+  };
+
   return <div className="rich-shell">
     <style>{`
-      html, body, #root { margin: 0; width: 100%; max-width: 100%; min-width: 0; height: 100%; overflow-x: hidden; background: #f8fafe; }
+      html, body, #root { margin: 0; width: 100%; max-width: 100%; min-width: 0; height: 100%; overflow-x: hidden; background: ${theme.page}; }
       * { box-sizing: border-box; }
-      .rich-shell { position: relative; width: 100%; max-width: 100%; min-width: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: #34415b; }
+      .rich-shell { position: relative; width: 100%; max-width: 100%; min-width: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: ${theme.ink}; }
       .toolbar-rail { position: fixed; z-index: 10; left: 16px; right: 16px; bottom: max(8px, ${safeBottom}px); display: flex; justify-content: flex-end; min-width: 0; pointer-events: none; }
-      .toolbar-panel { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; overflow: hidden; border: 1px solid #e0e6f0; border-radius: 22px; background: rgba(255, 255, 255, .96); box-shadow: 0 8px 25px rgba(18, 39, 83, .14), 0 2px 5px rgba(18, 39, 83, .08); backdrop-filter: blur(16px); pointer-events: auto; transition: width 240ms cubic-bezier(.2,.8,.2,1), height 240ms cubic-bezier(.2,.8,.2,1), border-radius 240ms ease; }
+      .toolbar-panel { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; overflow: hidden; border: 1px solid ${theme.toolbarBorder}; border-radius: 22px; background: ${theme.toolbar}; box-shadow: 0 8px 25px rgba(18, 39, 83, .14), 0 2px 5px rgba(18, 39, 83, .08); backdrop-filter: blur(16px); pointer-events: auto; transition: width 240ms cubic-bezier(.2,.8,.2,1), height 240ms cubic-bezier(.2,.8,.2,1), border-radius 240ms ease; }
       .toolbar-rail.collapsed .toolbar-panel { width: 56px; height: 56px; border-radius: 28px; }
-      .toolbar-toggle { flex: none; display: grid; place-items: center; width: 46px; height: 46px; margin-left: 8px; padding: 0; border: 0; border-radius: 15px; background: transparent; color: #75829c; -webkit-tap-highlight-color: transparent; }
-      .toolbar-toggle:active { background: #eaf0ff; color: #1749e8; }
+      .toolbar-toggle { flex: none; display: grid; place-items: center; width: 46px; height: 46px; margin-left: 8px; padding: 0; border: 0; border-radius: 15px; background: transparent; color: ${theme.muted}; -webkit-tap-highlight-color: transparent; }
+      .toolbar-toggle:active { background: ${theme.pale}; color: #1749e8; }
       .toolbar-toggle svg { width: 21px; height: 21px; }
       .toolbar-rail.collapsed .toolbar-toggle { width: 54px; height: 54px; margin-left: 0; border-radius: 50%; color: #1749e8; }
       .tools { display: flex; flex: 1; width: 0; min-width: 0; gap: 8px; padding: 8px; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch; touch-action: pan-x; }
       .tools::-webkit-scrollbar { display: none; }
       .toolbar-rail.collapsed .tools { flex: 0 0 0; width: 0; padding: 0; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 120ms ease, visibility 0s linear 120ms; }
       button { font: inherit; cursor: pointer; }
-      .tool { flex: none; display: grid; place-items: center; width: 46px; height: 46px; padding: 0; border: 0; border-radius: 16px; background: transparent; color: #53617a; -webkit-tap-highlight-color: transparent; }
-      .tool:active { background: #eaf0ff; color: #1749e8; }
-      .tool.active, .tool[aria-pressed="true"] { background: #dce7ff; color: #1749e8; box-shadow: inset 0 0 0 1px #9db8ff; }
+      .tool { flex: none; display: grid; place-items: center; width: 46px; height: 46px; padding: 0; border: 0; border-radius: 16px; background: transparent; color: ${theme.tool}; -webkit-tap-highlight-color: transparent; }
+      .tool:active { background: ${theme.pale}; color: #1749e8; }
+      .tool.active, .tool[aria-pressed="true"] { background: ${theme.active}; color: #1749e8; box-shadow: inset 0 0 0 1px ${theme.activeBorder}; }
       .tool:focus-visible { outline: 2px solid #1749e8; outline-offset: -2px; }
       .body-scroll { flex: 1; min-width: 0; min-height: 0; width: 100%; overflow-x: hidden; overflow-y: auto; padding: 16px 25px ${safeBottom + 78}px; }
       .editor { width: 100%; min-width: 0; max-width: 100%; min-height: 100%; outline: none; font-size: 17px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
-      .editor:empty:before { content: 'Start anywhere…'; color: #a3aec2; }
+      .editor:empty:before { content: 'Start anywhere…'; color: ${darkMode ? '#7f8ba0' : '#a3aec2'}; }
       .editor p { margin: 0 0 12px; }
-      .editor h1, .editor h2, .editor h3 { color: #101d38; margin: 12px 0 10px; line-height: 1.25; }
+      .editor h1, .editor h2, .editor h3 { color: ${theme.ink}; margin: 12px 0 10px; line-height: 1.25; }
       .editor h1 { font-size: 29px; } .editor h2 { font-size: 24px; } .editor h3 { font-size: 20px; }
-      .editor blockquote { margin: 12px 0; padding-left: 15px; border-left: 3px solid #1749e8; color: #75829c; }
+      .editor blockquote { margin: 12px 0; padding-left: 15px; border-left: 3px solid #1749e8; color: ${theme.muted}; }
       .editor ul, .editor ol { padding-left: 24px; margin: 8px 0 13px; }
       .editor a { color: #1749e8; }
-      .editor code { background: #eaf0ff; border-radius: 4px; padding: 1px 3px; }
+      .editor code { background: ${theme.pale}; border-radius: 4px; padding: 1px 3px; }
       .editor pre { max-width: 100%; background: #101d38; color: white; border-radius: 12px; padding: 14px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
       .editor pre code { background: none; }
-      .editor hr { border: 0; border-top: 1px solid #d9e0ec; margin: 17px 0; }
+      .editor hr { border: 0; border-top: 1px solid ${theme.line}; margin: 17px 0; }
       .editor table { width: 100%; max-width: 100%; table-layout: fixed; border-collapse: collapse; margin: 12px 0; }
-      .editor th, .editor td { min-width: 0; border: 1px solid #cbd5e5; padding: 8px 10px; overflow-wrap: anywhere; word-break: break-word; }
-      .editor th { background: #eaf0ff; color: #101d38; }
+      .editor th, .editor td { min-width: 0; border: 1px solid ${darkMode ? '#3a4559' : '#cbd5e5'}; padding: 8px 10px; overflow-wrap: anywhere; word-break: break-word; }
+      .editor th { background: ${theme.pale}; color: ${theme.ink}; }
       .editor img { max-width: 100%; border-radius: 12px; }
       .veil { position: fixed; inset: 0; background: #0a142c66; display: grid; place-items: center; padding: 24px; }
-      .dialog { width: min(100%, 390px); padding: 24px; border-radius: 24px; background: white; box-shadow: 0 12px 26px #0a163333; }
+      .dialog { width: min(100%, 390px); padding: 24px; border-radius: 24px; background: ${theme.surface}; box-shadow: 0 12px 26px #0a163333; }
       .eyebrow { color: #1749e8; font-size: 10px; font-weight: 800; letter-spacing: 1.4px; }
-      .dialog h2 { margin: 8px 0 5px; color: #101d38; font: 600 25px Georgia, serif; }
-      .dialog p { margin: 0 0 16px; color: #75829c; font-size: 14px; }
-      .dimension { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-top: 1px solid #e5eaf3; }
-      .dialog-input { display: block; width: 100%; height: 44px; margin: 8px 0; padding: 0 12px; border: 1px solid #d9e0ec; border-radius: 10px; color: #101d38; background: white; font: inherit; font-size: 14px; }
+      .dialog h2 { margin: 8px 0 5px; color: ${theme.ink}; font: 600 25px Georgia, serif; }
+      .dialog p { margin: 0 0 16px; color: ${theme.muted}; font-size: 14px; }
+      .dimension { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-top: 1px solid ${theme.line}; color: ${theme.ink}; }
+      .dialog-input { display: block; width: 100%; height: 44px; margin: 8px 0; padding: 0 12px; border: 1px solid ${theme.line}; border-radius: 10px; color: ${theme.ink}; background: ${theme.surface}; font: inherit; font-size: 14px; }
       .stepper, .dialog-actions { display: flex; align-items: center; gap: 12px; }
       .stepper button { width: 34px; height: 34px; border: 0; border-radius: 10px; color: #1749e8; background: #eaf0ff; font-size: 20px; }
       .dialog-actions { margin-top: 19px; gap: 10px; }
-      .dialog-actions button { flex: 1; height: 47px; border-radius: 13px; border: 1px solid #e5eaf3; background: white; color: #101d38; font-weight: 700; }
+      .dialog-actions button { flex: 1; height: 47px; border-radius: 13px; border: 1px solid ${theme.line}; background: ${theme.surface}; color: ${theme.ink}; font-weight: 700; }
       .dialog-actions .primary { background: #1749e8; color: white; border-color: #1749e8; }
     `}</style>
     <div className="body-scroll"><div ref={editor} className="editor" contentEditable suppressContentEditableWarning role="textbox" aria-label="Note body" aria-multiline="true" onInput={() => { emitChange(); syncActiveTools(); }} onKeyUp={() => { rememberSelection(); syncActiveTools(); }} onMouseUp={() => { rememberSelection(); syncActiveTools(); }} onTouchEnd={() => { rememberSelection(); syncActiveTools(); }} /></div>

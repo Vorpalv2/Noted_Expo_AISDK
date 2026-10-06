@@ -27,6 +27,11 @@ const COLORS = {
   blue: "#1749E8", blueDark: "#1038C5", ink: "#101D38", muted: "#75829C",
   line: "#E5EAF3", surface: "#FFFFFF", background: "#F8FAFE", pale: "#EAF0FF", yellow: "#FFD765",
 };
+const DARK_COLORS = {
+  ...COLORS,
+  ink: "#F4F6FB", muted: "#B0BACB", line: "#2A3140", surface: "#141821",
+  background: "#080A0F", pale: "#1B2C50",
+};
 type NoteActionMenu = { note: Note; x: number; y: number };
 
 const starterNotes: Note[] = [
@@ -96,7 +101,14 @@ function NotesExperience({
   loading: boolean;
 }) {
   const insets = useSafeAreaInsets();
-  const { width: screenWidth } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const [darkMode, setDarkMode] = useState(false);
+  const palette = darkMode ? DARK_COLORS : COLORS;
+  const [themeReveal, setThemeReveal] = useState<{ visible: boolean; dark: boolean; x: number; y: number }>({ visible: false, dark: false, x: 0, y: 0 });
+  const themeRevealProgress = useRef(new Animated.Value(0)).current;
+  const themeRevealRunning = useRef(false);
+  const themeRevealDiameter = Math.ceil(Math.hypot(screenWidth, screenHeight) * 2);
+  const themeRevealScale = themeRevealProgress;
   const editorTranslateX = useRef(new Animated.Value(screenWidth)).current;
   const headerProgress = useRef(new Animated.Value(0)).current;
   const nativeHeaderCollapsedRef = useRef(false);
@@ -231,6 +243,23 @@ function NotesExperience({
   };
   const deleteNote = () => { if (active) requestDelete(active); };
 
+  const toggleTheme = (event: any) => {
+    if (themeRevealRunning.current) return;
+    const nextDark = !darkMode;
+    const { pageX, pageY } = event.nativeEvent;
+    const x = typeof pageX === "number" ? pageX : screenWidth - 46;
+    const y = typeof pageY === "number" ? pageY : insets.top + 20;
+    themeRevealRunning.current = true;
+    themeRevealProgress.setValue(0);
+    setThemeReveal({ visible: true, dark: nextDark, x, y });
+    Animated.timing(themeRevealProgress, { toValue: 1, duration: 520, useNativeDriver: true }).start(({ finished }) => {
+      if (finished) setDarkMode(nextDark);
+      themeRevealProgress.setValue(0);
+      setThemeReveal((current) => ({ ...current, visible: false }));
+      themeRevealRunning.current = false;
+    });
+  };
+
   const onHomeScroll = (event: any) => {
     const offsetY = event.nativeEvent.contentOffset.y;
     if (Platform.OS === "web") {
@@ -265,7 +294,7 @@ function NotesExperience({
   };
 
   const homeScreen = (
-    <SafeAreaView style={[styles.safe, styles.homeRoot]} edges={["left", "right"]}>
+    <SafeAreaView style={[styles.safe, styles.homeRoot, { backgroundColor: palette.background }]} edges={["left", "right"]}>
       <StatusBar style="light" />
       <Animated.View style={[styles.homeHeader, {
         paddingTop: insets.top + 8,
@@ -289,9 +318,9 @@ function NotesExperience({
         </Animated.View>
       </Animated.View>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <View style={styles.homeBody}>
+      <View style={[styles.homeBody, { backgroundColor: palette.background }]}>
       <Animated.ScrollView
-        style={styles.notesScroll}
+        style={[styles.notesScroll, { backgroundColor: palette.background }]}
         contentContainerStyle={[styles.listContent, { paddingTop: insets.top + 162 + 25 }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -299,7 +328,7 @@ function NotesExperience({
         onScroll={onHomeScroll}
         onScrollBeginDrag={onHomeScrollBeginDrag}
       >
-        {loading ? <View style={styles.loadingState}><Text style={styles.loadingText}>Gathering your thoughts…</Text></View> : notes.length === 0 ? (
+        {loading ? <View style={styles.loadingState}><Text style={[styles.loadingText, { color: palette.muted }]}>Gathering your thoughts…</Text></View> : notes.length === 0 ? (
           <View style={styles.emptyWrap}>
             <View style={styles.paperArt}><View style={styles.paperShadow} /><View style={styles.paper}><View style={styles.paperFold} /><View style={styles.paperLine} /><View style={[styles.paperLine, { width: "65%" }]} /><View style={[styles.paperLine, { width: "78%" }]} /></View><View style={styles.sparkle}>✳</View></View>
             <Text style={styles.emptyTitle}>Make room for{`\n`}your thoughts.</Text>
@@ -307,42 +336,50 @@ function NotesExperience({
             <Pressable style={styles.emptyButton} onPress={createNote}><Text style={styles.emptyButtonText}>Write your first note</Text><Text style={styles.emptyButtonArrow}>↗</Text></Pressable>
           </View>
         ) : filtered.pinned.length + filtered.recent.length === 0 ? (
-          <View style={styles.noResults}><Text style={styles.noResultsTitle}>Nothing found</Text><Text style={styles.noResultsBody}>Try another word or phrase.</Text></View>
+          <View style={styles.noResults}><Text style={[styles.noResultsTitle, { color: palette.ink }]}>Nothing found</Text><Text style={[styles.noResultsBody, { color: palette.muted }]}>Try another word or phrase.</Text></View>
         ) : <>
-          {filtered.pinned.length > 0 && <PinnedSection notes={filtered.pinned} open={setActive} togglePin={handleTogglePin} showActions={showNoteActions} />}
-          {filtered.recent.length > 0 && <RecentSection notes={filtered.recent} open={setActive} togglePin={handleTogglePin} onDelete={requestDelete} showActions={showNoteActions} divided={filtered.pinned.length > 0} />}
-          <Text style={styles.listFootnote}>{notes.length} {notes.length === 1 ? "note" : "notes"} · kept just for you</Text>
+          {filtered.pinned.length > 0 && <PinnedSection notes={filtered.pinned} open={setActive} togglePin={handleTogglePin} showActions={showNoteActions} darkMode={darkMode} />}
+          {filtered.recent.length > 0 && <RecentSection notes={filtered.recent} open={setActive} togglePin={handleTogglePin} onDelete={requestDelete} showActions={showNoteActions} divided={filtered.pinned.length > 0} darkMode={darkMode} />}
+          <Text style={[styles.listFootnote, { color: darkMode ? "#758096" : "#A5B0C1" }]}>{notes.length} {notes.length === 1 ? "note" : "notes"} · kept just for you</Text>
         </>}
       </Animated.ScrollView>
       {notes.length > 0 && <View style={[styles.bottomSearchCreate, { bottom: keyboardVisible ? 12 : insets.bottom + 14 }]}>
-        <View style={styles.bottomSearchWrap}>
+        <View style={[styles.bottomSearchWrap, darkMode && styles.darkSurface, darkMode && styles.darkBorder]}>
           <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" style={styles.bottomSearchIcon}>
             <Circle cx={10.8} cy={10.8} r={6.8} stroke={COLORS.blue} strokeWidth={2} />
             <Path d="m16 16 4.5 4.5" stroke={COLORS.blue} strokeWidth={2} strokeLinecap="round" />
           </Svg>
-          <TextInput value={search} onChangeText={setSearch} placeholder="Find a note" placeholderTextColor="#98A3B6" style={styles.searchInput} returnKeyType="search" />
-          {search.length > 0 && <Pressable onPress={() => setSearch("")} hitSlop={12} accessibilityLabel="Clear search"><Text style={styles.clearSearch}>×</Text></Pressable>}
+          <TextInput value={search} onChangeText={setSearch} placeholder="Find a note" placeholderTextColor={darkMode ? "#929DB2" : "#98A3B6"} style={[styles.searchInput, { color: palette.ink }]} returnKeyType="search" />
+          {search.length > 0 && <Pressable onPress={() => setSearch("")} hitSlop={12} accessibilityLabel="Clear search"><Text style={[styles.clearSearch, darkMode && { color: palette.muted }]}>×</Text></Pressable>}
         </View>
         <Pressable style={({ pressed }) => [styles.bottomCreateButton, pressed && styles.pressed]} onPress={createNote} accessibilityRole="button" accessibilityLabel="Create a note">
           <Svg width={25} height={25} viewBox="0 0 24 24" fill="none"><Path d="M12 5v14M5 12h14" stroke="white" strokeWidth={2} strokeLinecap="round" /></Svg>
         </Pressable>
       </View>}
-      {busy && <View style={styles.busyVeil}><Text style={styles.busyText}>Opening a fresh page…</Text></View>}
+      {busy && <View style={[styles.busyVeil, darkMode && styles.darkSurface]}><Text style={styles.busyText}>Opening a fresh page…</Text></View>}
       </View>
       </KeyboardAvoidingView>
-      <NoteActions menu={actionMenu} onCancel={() => setActionMenu(null)} onEdit={() => { if (actionMenu) setActive(actionMenu.note); setActionMenu(null); }} onPin={() => { if (actionMenu) handleTogglePin(actionMenu.note._id); setActionMenu(null); }} onDelete={() => { if (actionMenu) requestDelete(actionMenu.note); setActionMenu(null); }} />
-      <DeleteConfirmation note={deleteTarget} error={deleteError} deleting={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} />
+      <NoteActions menu={actionMenu} onCancel={() => setActionMenu(null)} onEdit={() => { if (actionMenu) setActive(actionMenu.note); setActionMenu(null); }} onPin={() => { if (actionMenu) handleTogglePin(actionMenu.note._id); setActionMenu(null); }} onDelete={() => { if (actionMenu) requestDelete(actionMenu.note); setActionMenu(null); }} darkMode={darkMode} />
+      <DeleteConfirmation note={deleteTarget} error={deleteError} deleting={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} darkMode={darkMode} />
+      {themeReveal.visible && <Animated.View pointerEvents="none" style={{ position: "absolute", zIndex: 100, width: themeRevealDiameter, height: themeRevealDiameter, left: themeReveal.x - themeRevealDiameter / 2, top: themeReveal.y - themeRevealDiameter / 2, borderRadius: themeRevealDiameter / 2, backgroundColor: themeReveal.dark ? DARK_COLORS.background : COLORS.background, transform: [{ scale: themeRevealScale }] }} />}
+      <Pressable onPress={toggleTheme} accessibilityRole="button" accessibilityLabel={darkMode ? "Switch to light mode" : "Switch to dark mode"} style={[styles.themeToggle, themeReveal.visible && styles.themeToggleRevealing, { top: insets.top + 8 }]}>
+        <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+          {darkMode
+            ? <Path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.64 5.64l1.42 1.42m9.88 9.88 1.42 1.42m0-12.72-1.42 1.42m-9.88 9.88-1.42 1.42M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z" stroke="white" strokeWidth={1.8} strokeLinecap="round" />
+            : <Path d="M20.2 15.2A8.5 8.5 0 0 1 8.8 3.8 8.6 8.6 0 1 0 20.2 15.2Z" stroke="white" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />}
+        </Svg>
+      </Pressable>
     </SafeAreaView>
   );
   if (!active) return homeScreen;
 
   const editorScreen = <>
-    <StatusBar style="dark" />
-    <Editor note={active} saving={saving} onChange={updateActive} onClose={closeEditor} onDelete={deleteNote} />
-    <DeleteConfirmation note={deleteTarget} error={deleteError} deleting={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} />
+    <StatusBar style={darkMode ? "light" : "dark"} />
+    <Editor note={active} saving={saving} onChange={updateActive} onClose={closeEditor} onDelete={deleteNote} darkMode={darkMode} />
+    <DeleteConfirmation note={deleteTarget} error={deleteError} deleting={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} darkMode={darkMode} />
   </>;
   const translatedEditor = (
-    <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: COLORS.background, transform: [{ translateX: editorTranslateX }] }]}>
+    <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: palette.background, transform: [{ translateX: editorTranslateX }] }]}>
       {editorScreen}
     </Animated.View>
   );
@@ -372,12 +409,14 @@ const noteCardColors = [
   { background: "#FFF0A8", ink: "#101D38", muted: "#6F7783" },
 ];
 
-function cardColorsFor(id: string) {
+function cardColorsFor(id: string, darkMode = false) {
   const stableHash = [...id].reduce((hash, character) => (hash * 31 + character.charCodeAt(0)) >>> 0, 7);
-  return noteCardColors[stableHash % noteCardColors.length];
+  return darkMode
+    ? [{ background: "#17243B", ink: "#F4F6FB", muted: "#C2CCDC" }, { background: "#292416", ink: "#F4F6FB", muted: "#D5CBAF" }][stableHash % 2]
+    : noteCardColors[stableHash % noteCardColors.length];
 }
 
-function PinnedSection({ notes, open, togglePin, showActions }: { notes: Note[]; open: (note: Note) => void; togglePin: (id: string) => void | Promise<unknown>; showActions: (note: Note, x: number, y: number) => void }) {
+function PinnedSection({ notes, open, togglePin, showActions, darkMode }: { notes: Note[]; open: (note: Note) => void; togglePin: (id: string) => void | Promise<unknown>; showActions: (note: Note, x: number, y: number) => void; darkMode: boolean }) {
   const { width } = useWindowDimensions();
   const cardWidth = width > 640 ? Math.min(620, (width - 96) / 2) : Math.max(148, Math.min(174, (width - 60) / 2));
   const cardHeight = Math.min(800, Math.max(230, cardWidth * 1.29));
@@ -394,7 +433,7 @@ function PinnedSection({ notes, open, togglePin, showActions }: { notes: Note[];
   };
   return <View style={styles.section}>
     <View style={styles.sectionHeading}>
-      <Text style={[styles.sectionTitle, { fontSize: 22 * headingScale, lineHeight: 27 * headingScale }]}>Pinned</Text>
+      <Text style={[styles.sectionTitle, darkMode && { color: DARK_COLORS.ink }, { fontSize: 22 * headingScale, lineHeight: 27 * headingScale }]}>Pinned</Text>
       <View style={styles.sectionHeadingRight}>
         <Text style={[styles.sectionCount, { fontSize: 18 * headingScale }]}>{notes.length}</Text>
         <Pressable onPress={scrollNext} accessibilityRole="button" accessibilityLabel="Show more pinned notes" hitSlop={10}>
@@ -414,8 +453,8 @@ function PinnedSection({ notes, open, togglePin, showActions }: { notes: Note[];
       onMomentumScrollEnd={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.x; }}
     >
       {notes.map((note) => {
-        const colors = cardColorsFor(note._id);
-        return <View key={note._id} style={[styles.pinnedCard, { width: cardWidth, height: cardHeight, backgroundColor: colors.background, marginRight: cardGap, padding: 16 * cardScale }]}>
+        const colors = cardColorsFor(note._id, darkMode);
+        return <View key={note._id} style={[styles.pinnedCard, darkMode && { borderColor: DARK_COLORS.ink }, { width: cardWidth, height: cardHeight, backgroundColor: colors.background, marginRight: cardGap, padding: 16 * cardScale }]}>
           <Pressable onPress={() => togglePin(note._id)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Unpin note" style={styles.cardPinMark}>
             <PinIcon color={COLORS.blue} size={25 * cardScale} />
           </Pressable>
@@ -430,14 +469,14 @@ function PinnedSection({ notes, open, togglePin, showActions }: { notes: Note[];
   </View>;
 }
 
-function RecentSection({ notes, open, togglePin, onDelete, showActions, divided }: { notes: Note[]; open: (note: Note) => void; togglePin: (id: string) => void | Promise<unknown>; onDelete: (note: Note) => void; showActions: (note: Note, x: number, y: number) => void; divided: boolean }) {
+function RecentSection({ notes, open, togglePin, onDelete, showActions, divided, darkMode }: { notes: Note[]; open: (note: Note) => void; togglePin: (id: string) => void | Promise<unknown>; onDelete: (note: Note) => void; showActions: (note: Note, x: number, y: number) => void; divided: boolean; darkMode: boolean }) {
   return <View style={[styles.section, divided && styles.recentSection]}>
-    <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>Recent</Text><Text style={styles.sectionCount}>{String(notes.length).padStart(2, "0")}</Text></View>
-    {notes.map((note) => <RecentNoteRow key={note._id} note={note} open={open} togglePin={togglePin} onDelete={onDelete} showActions={showActions} />)}
+    <View style={styles.sectionHeading}><Text style={[styles.sectionTitle, darkMode && { color: DARK_COLORS.ink }]}>Recent</Text><Text style={styles.sectionCount}>{String(notes.length).padStart(2, "0")}</Text></View>
+    {notes.map((note) => <RecentNoteRow key={note._id} note={note} open={open} togglePin={togglePin} onDelete={onDelete} showActions={showActions} darkMode={darkMode} />)}
   </View>;
 }
 
-function RecentNoteRow({ note, open, togglePin, onDelete, showActions }: { note: Note; open: (note: Note) => void; togglePin: (id: string) => void | Promise<unknown>; onDelete: (note: Note) => void; showActions: (note: Note, x: number, y: number) => void }) {
+function RecentNoteRow({ note, open, togglePin, onDelete, showActions, darkMode }: { note: Note; open: (note: Note) => void; togglePin: (id: string) => void | Promise<unknown>; onDelete: (note: Note) => void; showActions: (note: Note, x: number, y: number) => void; darkMode: boolean }) {
   const { width } = useWindowDimensions();
   const actionWidth = Math.max(120, (width - 46) * 0.5);
   const [swiped, setSwiped] = useState(false);
@@ -454,12 +493,12 @@ function RecentNoteRow({ note, open, togglePin, onDelete, showActions }: { note:
     renderLeftActions={(actionProgress, __, swipeable) => <SwipeAction width={actionWidth} visible={actionsVisible} actionProgress={actionProgress} label="Pin" kind="pin" onPress={() => { swipeable.close(); togglePin(note._id); }} />}
     renderRightActions={(actionProgress, __, swipeable) => <SwipeAction width={actionWidth} visible={actionsVisible} actionProgress={actionProgress} label="Delete" kind="delete" onPress={() => { swipeable.close(); onDelete(note); }} />}
   >
-    <View style={[styles.noteRow, swiped && styles.noteRowSwiped]}>
+    <View style={[styles.noteRow, darkMode && { borderBottomColor: DARK_COLORS.line }, swiped && styles.noteRowSwiped]}>
       <Pressable onPress={() => open(note)} onLongPress={(event) => showActions(note, event.nativeEvent.pageX, event.nativeEvent.pageY)} delayLongPress={1000} style={({ pressed }) => [styles.noteCopy, pressed && styles.rowPressed]}>
-        <Text numberOfLines={1} style={styles.noteTitle}>{note.title.trim() || "Untitled note"}</Text>
-        <Text numberOfLines={1} style={styles.notePreview}>{markdownExcerpt(note.body) || "A new page, ready when you are."}</Text>
+        <Text numberOfLines={1} style={[styles.noteTitle, darkMode && { color: DARK_COLORS.ink }]}>{note.title.trim() || "Untitled note"}</Text>
+        <Text numberOfLines={1} style={[styles.notePreview, darkMode && { color: DARK_COLORS.muted }]}>{markdownExcerpt(note.body) || "A new page, ready when you are."}</Text>
       </Pressable>
-      <View style={styles.noteMeta}><Text style={styles.noteTime}>{relativeTime(note.updatedAt)}</Text><Pressable onPress={() => togglePin(note._id)} hitSlop={12} accessibilityRole="button" accessibilityLabel="Pin note" style={styles.pinButton}><PinIcon color={COLORS.blue} /></Pressable></View>
+      <View style={styles.noteMeta}><Text style={[styles.noteTime, darkMode && { color: "#8793A7" }]}>{relativeTime(note.updatedAt)}</Text><Pressable onPress={() => togglePin(note._id)} hitSlop={12} accessibilityRole="button" accessibilityLabel="Pin note" style={[styles.pinButton, darkMode && { backgroundColor: DARK_COLORS.pale }]}><PinIcon color={COLORS.blue} /></Pressable></View>
     </View>
   </Swipeable>;
 }
@@ -478,7 +517,7 @@ function SwipeAction({ width, visible, actionProgress, label, kind, onPress }: {
   </View>;
 }
 
-function NoteActions({ menu, onCancel, onEdit, onPin, onDelete }: { menu: NoteActionMenu | null; onCancel: () => void; onEdit: () => void; onPin: () => void; onDelete: () => void }) {
+function NoteActions({ menu, onCancel, onEdit, onPin, onDelete, darkMode }: { menu: NoteActionMenu | null; onCancel: () => void; onEdit: () => void; onPin: () => void; onDelete: () => void; darkMode: boolean }) {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const menuWidth = 198;
@@ -493,7 +532,7 @@ function NoteActions({ menu, onCancel, onEdit, onPin, onDelete }: { menu: NoteAc
   return <Modal visible={!!menu} transparent animationType="fade" onRequestClose={onCancel} statusBarTranslucent>
     <View style={styles.noteActionsOverlay}>
       <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} accessibilityLabel="Close note actions" />
-      <View style={[styles.noteActionBar, position]}>
+      <View style={[styles.noteActionBar, darkMode && { backgroundColor: DARK_COLORS.surface, borderColor: DARK_COLORS.ink }, position]}>
         <Pressable onPress={onEdit} accessibilityRole="button" accessibilityLabel="Edit note" style={({ pressed }) => [styles.noteActionCircle, styles.noteActionEdit, pressed && styles.noteActionPressed]}>
           <Svg width={23} height={23} viewBox="0 0 24 24" fill="none"><Path d="m4 16.8-.9 4.1 4.1-.9L19 8.2 15.8 5 4 16.8Z" stroke={COLORS.blue} strokeWidth={1.8} strokeLinejoin="round" /><Path d="m13.9 6.9 3.2 3.2" stroke={COLORS.blue} strokeWidth={1.8} strokeLinecap="round" /></Svg>
         </Pressable>
@@ -508,19 +547,19 @@ function NoteActions({ menu, onCancel, onEdit, onPin, onDelete }: { menu: NoteAc
   </Modal>;
 }
 
-function DeleteConfirmation({ note, error, deleting, onCancel, onConfirm }: { note: Note | null; error: string; deleting: boolean; onCancel: () => void; onConfirm: () => void }) {
+function DeleteConfirmation({ note, error, deleting, onCancel, onConfirm, darkMode }: { note: Note | null; error: string; deleting: boolean; onCancel: () => void; onConfirm: () => void; darkMode: boolean }) {
   return <Modal visible={!!note} transparent animationType="fade" onRequestClose={onCancel} statusBarTranslucent>
     <View style={styles.deleteOverlay}>
-      <View style={styles.deleteCard}>
+      <View style={[styles.deleteCard, darkMode && { backgroundColor: DARK_COLORS.surface }]}>
         <View style={styles.deleteMark}><Text style={styles.deleteMarkGlyph}>×</Text></View>
-        <Text style={styles.deleteTitle}>Delete this note?</Text>
-        <Text style={styles.deleteBody}>
+        <Text style={[styles.deleteTitle, darkMode && { color: DARK_COLORS.ink }]}>Delete this note?</Text>
+        <Text style={[styles.deleteBody, darkMode && { color: DARK_COLORS.muted }]}>
           “{note?.title.trim() || "Untitled note"}” will be removed from your notes. This can’t be undone.
         </Text>
         {!!error && <Text style={styles.deleteError}>{error}</Text>}
         <View style={styles.deleteButtons}>
-          <Pressable onPress={onCancel} disabled={deleting} style={({ pressed }) => [styles.deleteCancel, pressed && styles.rowPressed]}>
-            <Text style={styles.deleteCancelText}>Keep note</Text>
+          <Pressable onPress={onCancel} disabled={deleting} style={({ pressed }) => [styles.deleteCancel, darkMode && { borderColor: DARK_COLORS.line, backgroundColor: DARK_COLORS.background }, pressed && styles.rowPressed]}>
+            <Text style={[styles.deleteCancelText, darkMode && { color: DARK_COLORS.ink }]}>Keep note</Text>
           </Pressable>
           <Pressable onPress={onConfirm} disabled={deleting} style={({ pressed }) => [styles.deleteConfirm, pressed && styles.deletePressed, deleting && styles.deleteDisabled]}>
             <Text style={styles.deleteConfirmText}>{deleting ? "Deleting…" : "Delete note"}</Text>
@@ -538,24 +577,25 @@ function PinIcon({ color, size = 18 }: { color: string; size?: number }) {
   </Svg>;
 }
 
-function Editor({ note, saving, onChange, onClose, onDelete }: { note: Note; saving: boolean; onChange: (part: Partial<Note>) => void; onClose: (latestBody?: string) => void; onDelete: () => void }) {
+function Editor({ note, saving, onChange, onClose, onDelete, darkMode }: { note: Note; saving: boolean; onChange: (part: Partial<Note>) => void; onClose: (latestBody?: string) => void; onDelete: () => void; darkMode: boolean }) {
   const insets = useSafeAreaInsets();
+  const palette = darkMode ? DARK_COLORS : COLORS;
   const [flushSignal, setFlushSignal] = useState(0);
   const [editorLoaded, setEditorLoaded] = useState(Platform.OS === "web");
-  return <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
+  return <SafeAreaView style={[styles.safe, { backgroundColor: palette.background }]} edges={["top", "left", "right"]}>
     <KeyboardAvoidingView style={styles.editor} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <View style={styles.editorNav}>
+      <View style={[styles.editorNav, darkMode && { borderBottomColor: palette.line }]}>
         <Pressable onPress={() => setFlushSignal((current) => current + 1)} style={styles.backButton} hitSlop={8}><Text style={styles.backArrow}>‹</Text><Text style={styles.backLabel}>All notes</Text></Pressable>
-        <View style={styles.saveStatus}><View style={[styles.saveDot, saving && styles.saveDotBusy]} /><Text style={styles.saveLabel}>{saving ? "Saving" : "Saved"}</Text></View>
-        <Pressable onPress={onDelete} hitSlop={12} style={styles.moreButton}><Text style={styles.moreGlyph}>···</Text></Pressable>
+        <View style={styles.saveStatus}><View style={[styles.saveDot, saving && styles.saveDotBusy]} /><Text style={[styles.saveLabel, darkMode && { color: palette.muted }]}>{saving ? "Saving" : "Saved"}</Text></View>
+        <Pressable onPress={onDelete} hitSlop={12} style={styles.moreButton}><Text style={[styles.moreGlyph, darkMode && { color: palette.muted }]}>···</Text></Pressable>
       </View>
       <View style={{ paddingHorizontal: 25, paddingTop: 18 }}>
-        <TextInput value={note.title} onChangeText={(title) => onChange({ title })} placeholder="Give this note a name" placeholderTextColor="#A3AEC2" style={styles.titleInput} multiline returnKeyType="next" blurOnSubmit={false} />
-        <View style={styles.editorRule}><View style={styles.editorRuleAccent} /></View>
+        <TextInput value={note.title} onChangeText={(title) => onChange({ title })} placeholder="Give this note a name" placeholderTextColor={darkMode ? "#7F8BA0" : "#A3AEC2"} style={[styles.titleInput, { color: palette.ink }]} multiline returnKeyType="next" blurOnSubmit={false} />
+        <View style={[styles.editorRule, darkMode && { backgroundColor: palette.line }]}><View style={styles.editorRuleAccent} /></View>
       </View>
-      <View style={{ flex: 1, minHeight: 0, width: "100%", backgroundColor: COLORS.background }}>
-        <RichNoteEditor noteId={note._id} markdown={note.body} flushSignal={flushSignal} safeBottom={insets.bottom} onChange={async (body) => onChange({ body })} onFinish={async (body) => onClose(body)} onReady={() => setEditorLoaded(true)} dom={{ style: { flex: 1, width: "100%", backgroundColor: COLORS.background } }} />
-        {!editorLoaded && <View pointerEvents="none" style={styles.editorLoading}><ActivityIndicator size="large" color={COLORS.blue} /></View>}
+      <View style={{ flex: 1, minHeight: 0, width: "100%", backgroundColor: palette.background }}>
+        <RichNoteEditor noteId={note._id} markdown={note.body} flushSignal={flushSignal} safeBottom={insets.bottom} darkMode={darkMode} onChange={async (body) => onChange({ body })} onFinish={async (body) => onClose(body)} onReady={() => setEditorLoaded(true)} dom={{ style: { flex: 1, width: "100%", backgroundColor: palette.background } }} />
+        {!editorLoaded && <View pointerEvents="none" style={[styles.editorLoading, { backgroundColor: palette.background }]}><ActivityIndicator size="large" color={COLORS.blue} /></View>}
       </View>
     </KeyboardAvoidingView>
   </SafeAreaView>;
@@ -597,6 +637,9 @@ const styles = StyleSheet.create({
   homeBody: { flex: 1, minHeight: 0, backgroundColor: COLORS.background },
   notesScroll: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, overflow: "hidden", zIndex: 0 },
   homeHeader: { position: "absolute", top: 0, left: 0, right: 0, backgroundColor: COLORS.blue, paddingHorizontal: 25, paddingTop: 8, paddingBottom: 35, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, zIndex: 2, elevation: 2 },
+  themeToggle: { position: "absolute", right: 22, width: 40, height: 40, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.12)", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)", zIndex: 101, elevation: 101 },
+  themeToggleRevealing: { backgroundColor: COLORS.blue, borderColor: "rgba(255,255,255,0.48)" },
+  darkSurface: { backgroundColor: DARK_COLORS.surface }, darkBorder: { borderColor: "#303849" },
   brandLine: { flexDirection: "row", alignItems: "center", marginBottom: 31 },
   brandMark: { width: 23, height: 23, borderRadius: 8, backgroundColor: "white", justifyContent: "center", alignItems: "center", transform: [{ rotate: "-8deg" }] },
   brandMarkInner: { width: 11, height: 13, borderWidth: 1.5, borderColor: COLORS.blue, borderRadius: 3, borderTopWidth: 3 },
