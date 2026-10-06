@@ -96,6 +96,8 @@ function NotesExperience({
   loading: boolean;
 }) {
   const insets = useSafeAreaInsets();
+  const { width: screenWidth } = useWindowDimensions();
+  const editorTranslateX = useRef(new Animated.Value(screenWidth)).current;
   const [search, setSearch] = useState("");
   const [active, setActive] = useState<Note | null>(null);
   const [actionMenu, setActionMenu] = useState<NoteActionMenu | null>(null);
@@ -148,14 +150,54 @@ function NotesExperience({
     }
     setActive(null);
   };
+  useEffect(() => {
+    if (active) {
+      Animated.spring(editorTranslateX, {
+        toValue: 0,
+        damping: 28,
+        stiffness: 260,
+        mass: 0.8,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      editorTranslateX.setValue(screenWidth);
+    }
+  }, [active?._id, editorTranslateX, screenWidth]);
   const backSwipe = useMemo(() => Gesture.Pan()
     .hitSlop({ left: 0, width: 28 })
-    .activeOffsetX(20)
+    .activeOffsetX(8)
     .failOffsetY([-18, 18])
     .onEnd((event) => {
-      if (event.translationX > 90) void closeEditor();
+      if (event.translationX > 90) {
+        Animated.timing(editorTranslateX, {
+          toValue: screenWidth,
+          duration: 190,
+          useNativeDriver: true,
+        }).start(({ finished }) => {
+          if (finished) void closeEditor();
+        });
+      } else {
+        Animated.spring(editorTranslateX, {
+          toValue: 0,
+          damping: 26,
+          stiffness: 280,
+          mass: 0.8,
+          useNativeDriver: true,
+        }).start();
+      }
     })
-    .runOnJS(true), [closeEditor]);
+    .onFinalize((_event, success) => {
+      if (!success) {
+        Animated.spring(editorTranslateX, {
+          toValue: 0,
+          damping: 26,
+          stiffness: 280,
+          mass: 0.8,
+          useNativeDriver: true,
+        }).start();
+      }
+    })
+    .runOnJS(true), [closeEditor, editorTranslateX, screenWidth]);
   const handleTogglePin = (id: string) => {
     Promise.resolve(togglePin(id)).catch(() => Alert.alert("Couldn’t update this note", "Check your connection and try again."));
   };
@@ -176,20 +218,7 @@ function NotesExperience({
   };
   const deleteNote = () => { if (active) requestDelete(active); };
 
-  if (active) {
-    const editorScreen = <>
-      <StatusBar style="dark" />
-      <Editor note={active} saving={saving} onChange={updateActive} onClose={closeEditor} onDelete={deleteNote} />
-      <DeleteConfirmation note={deleteTarget} error={deleteError} deleting={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} />
-    </>;
-    return Platform.OS === "web" ? editorScreen : (
-      <GestureDetector gesture={backSwipe}>
-        <View style={{ flex: 1 }}>{editorScreen}</View>
-      </GestureDetector>
-    );
-  }
-
-  return (
+  const homeScreen = (
     <SafeAreaView style={[styles.safe, styles.homeRoot]} edges={["left", "right"]}>
       <StatusBar style="light" />
       <View style={[styles.homeHeader, { paddingTop: insets.top + 8 }]}>
@@ -234,6 +263,37 @@ function NotesExperience({
       <NoteActions menu={actionMenu} onCancel={() => setActionMenu(null)} onEdit={() => { if (actionMenu) setActive(actionMenu.note); setActionMenu(null); }} onPin={() => { if (actionMenu) handleTogglePin(actionMenu.note._id); setActionMenu(null); }} onDelete={() => { if (actionMenu) requestDelete(actionMenu.note); setActionMenu(null); }} />
       <DeleteConfirmation note={deleteTarget} error={deleteError} deleting={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} />
     </SafeAreaView>
+  );
+  if (!active) return homeScreen;
+
+  const editorScreen = <>
+    <StatusBar style="dark" />
+    <Editor note={active} saving={saving} onChange={updateActive} onClose={closeEditor} onDelete={deleteNote} />
+    <DeleteConfirmation note={deleteTarget} error={deleteError} deleting={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} />
+  </>;
+  const translatedEditor = (
+    <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ translateX: editorTranslateX }] }]}>
+      {editorScreen}
+    </Animated.View>
+  );
+  return (
+    <View style={{ flex: 1 }}>
+      <Animated.View
+        pointerEvents="none"
+        style={[{ flex: 1 }, Platform.OS !== "web" && {
+          transform: [{ translateX: editorTranslateX.interpolate({
+            inputRange: [0, screenWidth],
+            outputRange: [-24, 0],
+            extrapolate: "clamp",
+          }) }],
+        }]}
+      >
+        {homeScreen}
+      </Animated.View>
+      {Platform.OS === "web" ? translatedEditor : (
+        <GestureDetector gesture={backSwipe}>{translatedEditor}</GestureDetector>
+      )}
+    </View>
   );
 }
 
