@@ -102,7 +102,7 @@ function NotesExperience({
   const headerCollapse = homeScrollY.interpolate({ inputRange: [0, 130], outputRange: [0, 1], extrapolate: "clamp" });
   const headerHeight = homeScrollY.interpolate({
     inputRange: [0, 130],
-    outputRange: [insets.top + 162, insets.top + 83],
+    outputRange: [insets.top + 162, insets.top + 50],
     extrapolate: "clamp",
   });
   const [search, setSearch] = useState("");
@@ -233,10 +233,14 @@ function NotesExperience({
       <StatusBar style="light" />
       <Animated.View style={[styles.homeHeader, {
         paddingTop: insets.top + 8,
-        paddingBottom: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [35, 14] }),
+        paddingBottom: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [35, 12] }),
         height: headerHeight,
       }]}>
-        <Animated.View style={[styles.brandLine, { marginBottom: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [31, 8] }) }]}>
+        <Animated.View style={[styles.brandLine, {
+          height: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [23, 0] }),
+          marginBottom: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [31, 0] }),
+          opacity: headerCollapse.interpolate({ inputRange: [0, 0.7, 1], outputRange: [1, 0, 0] }),
+        }]}>
           <View style={styles.brandMark}><View style={styles.brandMarkInner} /></View><Text style={styles.brand}>noted</Text><View style={styles.brandDot} />
         </Animated.View>
         <Animated.Text style={[styles.homeTitle, {
@@ -252,6 +256,9 @@ function NotesExperience({
       </Animated.View>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.homeBody}>
+      {!loading && notes.length > 0 && filtered.pinned.length > 0 && filtered.pinned.length + filtered.recent.length > 0 && (
+        <PinnedSection notes={filtered.pinned} open={setActive} togglePin={handleTogglePin} showActions={showNoteActions} />
+      )}
       <Animated.ScrollView
         contentContainerStyle={styles.listContent}
         keyboardShouldPersistTaps="handled"
@@ -269,7 +276,6 @@ function NotesExperience({
         ) : filtered.pinned.length + filtered.recent.length === 0 ? (
           <View style={styles.noResults}><Text style={styles.noResultsTitle}>Nothing found</Text><Text style={styles.noResultsBody}>Try another word or phrase.</Text></View>
         ) : <>
-          {filtered.pinned.length > 0 && <PinnedSection notes={filtered.pinned} open={setActive} togglePin={handleTogglePin} showActions={showNoteActions} />}
           {filtered.recent.length > 0 && <RecentSection notes={filtered.recent} open={setActive} togglePin={handleTogglePin} onDelete={requestDelete} showActions={showNoteActions} divided={filtered.pinned.length > 0} />}
           <Text style={styles.listFootnote}>{notes.length} {notes.length === 1 ? "note" : "notes"} · kept just for you</Text>
         </>}
