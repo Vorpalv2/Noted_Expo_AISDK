@@ -98,6 +98,14 @@ function NotesExperience({
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
   const editorTranslateX = useRef(new Animated.Value(screenWidth)).current;
+  const homeScrollY = useRef(new Animated.Value(0)).current;
+  const headerHeight = homeScrollY.interpolate({
+    inputRange: [0, 90],
+    outputRange: [insets.top + 162, insets.top + 43],
+    extrapolate: "clamp",
+  });
+  const headerCollapse = homeScrollY.interpolate({ inputRange: [0, 90], outputRange: [0, 1], extrapolate: "clamp" });
+  const heroHeight = homeScrollY.interpolate({ inputRange: [0, 90], outputRange: [70, 0], extrapolate: "clamp" });
   const [search, setSearch] = useState("");
   const [active, setActive] = useState<Note | null>(null);
   const [actionMenu, setActionMenu] = useState<NoteActionMenu | null>(null);
@@ -224,14 +232,35 @@ function NotesExperience({
   const homeScreen = (
     <SafeAreaView style={[styles.safe, styles.homeRoot]} edges={["left", "right"]}>
       <StatusBar style="light" />
-      <View style={[styles.homeHeader, { paddingTop: insets.top + 8 }]}>
-        <View style={styles.brandLine}><View style={styles.brandMark}><View style={styles.brandMarkInner} /></View><Text style={styles.brand}>noted</Text><View style={styles.brandDot} /></View>
-        <Text style={styles.homeTitle}>Your notes<Text style={styles.titleDot}>.</Text></Text>
-        <Text style={styles.homeSubtitle}>A little space for everything on your mind.</Text>
-      </View>
+      <Animated.View style={[styles.homeHeader, {
+        paddingTop: insets.top + 8,
+        paddingBottom: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [35, 12] }),
+        height: headerHeight,
+      }]}>
+        <Animated.View style={[styles.brandLine, { marginBottom: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [31, 0] }) }]}>
+          <View style={styles.brandMark}><View style={styles.brandMarkInner} /></View><Text style={styles.brand}>noted</Text><View style={styles.brandDot} />
+        </Animated.View>
+        <Animated.View style={{ height: heroHeight, opacity: headerCollapse.interpolate({ inputRange: [0, 0.7, 1], outputRange: [1, 0, 0] }), overflow: "hidden" }}>
+          <Animated.Text style={[styles.homeTitle, {
+            fontSize: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [37, 24] }),
+            lineHeight: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [43, 30] }),
+            letterSpacing: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [-1.25, -0.5] }),
+          }]}>Your notes<Text style={styles.titleDot}>.</Text></Animated.Text>
+          <Text style={styles.homeSubtitle}>A little space for everything on your mind.</Text>
+        </Animated.View>
+      </Animated.View>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.homeBody}>
-      <ScrollView contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      {!loading && notes.length > 0 && filtered.pinned.length > 0 && filtered.pinned.length + filtered.recent.length > 0 && (
+        <PinnedSection notes={filtered.pinned} open={setActive} togglePin={handleTogglePin} showActions={showNoteActions} />
+      )}
+      <Animated.ScrollView
+        contentContainerStyle={styles.listContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: homeScrollY } } }], { useNativeDriver: false })}
+      >
         {loading ? <View style={styles.loadingState}><Text style={styles.loadingText}>Gathering your thoughts…</Text></View> : notes.length === 0 ? (
           <View style={styles.emptyWrap}>
             <View style={styles.paperArt}><View style={styles.paperShadow} /><View style={styles.paper}><View style={styles.paperFold} /><View style={styles.paperLine} /><View style={[styles.paperLine, { width: "65%" }]} /><View style={[styles.paperLine, { width: "78%" }]} /></View><View style={styles.sparkle}>✳</View></View>
@@ -242,11 +271,10 @@ function NotesExperience({
         ) : filtered.pinned.length + filtered.recent.length === 0 ? (
           <View style={styles.noResults}><Text style={styles.noResultsTitle}>Nothing found</Text><Text style={styles.noResultsBody}>Try another word or phrase.</Text></View>
         ) : <>
-          {filtered.pinned.length > 0 && <PinnedSection notes={filtered.pinned} open={setActive} togglePin={handleTogglePin} showActions={showNoteActions} />}
           {filtered.recent.length > 0 && <RecentSection notes={filtered.recent} open={setActive} togglePin={handleTogglePin} onDelete={requestDelete} showActions={showNoteActions} divided={filtered.pinned.length > 0} />}
           <Text style={styles.listFootnote}>{notes.length} {notes.length === 1 ? "note" : "notes"} · kept just for you</Text>
         </>}
-      </ScrollView>
+      </Animated.ScrollView>
       {notes.length > 0 && <View style={[styles.bottomSearchCreate, { bottom: keyboardVisible ? 12 : insets.bottom + 14 }]}>
         <View style={styles.bottomSearchWrap}>
           <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" style={styles.bottomSearchIcon}>
