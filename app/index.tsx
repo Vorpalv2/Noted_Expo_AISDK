@@ -6,6 +6,7 @@ import { Swipeable } from "react-native-gesture-handler";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Svg, { Circle, Path } from "react-native-svg";
 import RichNoteEditor from "../components/RichNoteEditor";
+import PinnedFlameWrap from "../components/PinnedFlameWrap";
 import {
   ActivityIndicator, Alert, Animated, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
   Text, TextInput, View,
@@ -257,31 +258,33 @@ function PinnedSection({ notes, open, togglePin, showActions }: { notes: Note[];
         </Pressable>
       </View>
     </View>
-    <ScrollView
-      ref={carouselRef}
-      horizontal
-      nestedScrollEnabled
-      showsHorizontalScrollIndicator={false}
-      decelerationRate="fast"
-      snapToInterval={cardWidth + cardGap}
-      snapToAlignment="start"
-      contentContainerStyle={styles.pinnedCarousel}
-      onMomentumScrollEnd={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.x; }}
-    >
-      {notes.map((note) => {
-        const colors = cardColorsFor(note._id);
-        return <View key={note._id} style={[styles.pinnedCard, { width: cardWidth, height: cardHeight, backgroundColor: colors.background, marginRight: cardGap, padding: 16 * cardScale }]}>
-          <Pressable onPress={() => togglePin(note._id)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Unpin note" style={styles.cardPinMark}>
-            <PinIcon color={COLORS.blue} size={25 * cardScale} />
-          </Pressable>
-          <Pressable onPress={() => open(note)} onLongPress={(event) => showActions(note, event.nativeEvent.pageX, event.nativeEvent.pageY)} delayLongPress={1000} style={({ pressed }) => [styles.pinnedCardMain, pressed && styles.cardPressed]}>
-            <Text numberOfLines={2} style={[styles.cardTitle, { color: colors.ink, fontSize: 22 * cardScale, lineHeight: 27 * cardScale }]}>{note.title.trim() || "Untitled note"}</Text>
-            <Text numberOfLines={3} style={[styles.cardPreview, { color: colors.muted, fontSize: 15 * cardScale, lineHeight: 22 * cardScale }]}>{markdownExcerpt(note.body) || "A new page, ready when you are."}</Text>
-            <Text style={[styles.cardTime, { color: colors.muted, fontSize: 14 * cardScale }]}>{cardDate(note.updatedAt)}</Text>
-          </Pressable>
-        </View>;
-      })}
-    </ScrollView>
+    <PinnedFlameWrap style={{ height: cardHeight, marginTop: 18 }}>
+      <ScrollView
+        ref={carouselRef}
+        horizontal
+        nestedScrollEnabled
+        showsHorizontalScrollIndicator={false}
+        decelerationRate="fast"
+        snapToInterval={cardWidth + cardGap}
+        snapToAlignment="start"
+        contentContainerStyle={styles.pinnedCarousel}
+        onMomentumScrollEnd={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.x; }}
+      >
+        {notes.map((note) => {
+          const colors = cardColorsFor(note._id);
+          return <View key={note._id} style={[styles.pinnedCard, { width: cardWidth, height: cardHeight, backgroundColor: colors.background, marginRight: cardGap, padding: 16 * cardScale }]}>
+            <Pressable onPress={() => togglePin(note._id)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Unpin note" style={styles.cardPinMark}>
+              <PinIcon color={COLORS.blue} size={25 * cardScale} />
+            </Pressable>
+            <Pressable onPress={() => open(note)} onLongPress={(event) => showActions(note, event.nativeEvent.pageX, event.nativeEvent.pageY)} delayLongPress={1000} style={({ pressed }) => [styles.pinnedCardMain, pressed && styles.cardPressed]}>
+              <Text numberOfLines={2} style={[styles.cardTitle, { color: colors.ink, fontSize: 22 * cardScale, lineHeight: 27 * cardScale }]}>{note.title.trim() || "Untitled note"}</Text>
+              <Text numberOfLines={3} style={[styles.cardPreview, { color: colors.muted, fontSize: 15 * cardScale, lineHeight: 22 * cardScale }]}>{markdownExcerpt(note.body) || "A new page, ready when you are."}</Text>
+              <Text style={[styles.cardTime, { color: colors.muted, fontSize: 14 * cardScale }]}>{cardDate(note.updatedAt)}</Text>
+            </Pressable>
+          </View>;
+        })}
+      </ScrollView>
+    </PinnedFlameWrap>
   </View>;
 }
 
