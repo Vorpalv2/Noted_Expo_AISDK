@@ -248,7 +248,7 @@ function NotesExperience({
     if (
       !nativeHeaderCollapsedRef.current &&
       nativeCanCollapseHeaderRef.current &&
-      offsetY > 24 &&
+      offsetY > 96 &&
       offsetY > lastNativeScrollOffsetRef.current + 0.5
     ) {
       nativeHeaderCollapsedRef.current = true;
@@ -312,7 +312,7 @@ function NotesExperience({
       <View style={styles.homeBody}>
       <Animated.ScrollView
         style={styles.notesScroll}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingTop: insets.top + 162 + 25 }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
@@ -615,8 +615,8 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.background },
   homeRoot: { backgroundColor: COLORS.background },
   homeBody: { flex: 1, minHeight: 0, backgroundColor: COLORS.background },
-  notesScroll: { flex: 1, minHeight: 0, overflow: "hidden", zIndex: 0 },
-  homeHeader: { backgroundColor: COLORS.blue, paddingHorizontal: 25, paddingTop: 8, paddingBottom: 35, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, zIndex: 2, elevation: 2 },
+  notesScroll: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, overflow: "hidden", zIndex: 0 },
+  homeHeader: { position: "absolute", top: 0, left: 0, right: 0, backgroundColor: COLORS.blue, paddingHorizontal: 25, paddingTop: 8, paddingBottom: 35, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, zIndex: 2, elevation: 2 },
   brandLine: { flexDirection: "row", alignItems: "center", marginBottom: 31 },
   brandMark: { width: 23, height: 23, borderRadius: 8, backgroundColor: "white", justifyContent: "center", alignItems: "center", transform: [{ rotate: "-8deg" }] },
   brandMarkInner: { width: 11, height: 13, borderWidth: 1.5, borderColor: COLORS.blue, borderRadius: 3, borderTopWidth: 3 },
