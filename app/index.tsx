@@ -100,6 +100,8 @@ function NotesExperience({
   const editorTranslateX = useRef(new Animated.Value(screenWidth)).current;
   const headerProgress = useRef(new Animated.Value(0)).current;
   const nativeHeaderCollapsedRef = useRef(false);
+  const nativeCanRestoreHeaderRef = useRef(false);
+  const lastNativeScrollOffsetRef = useRef(0);
   const [nativeHeaderCollapsed, setNativeHeaderCollapsed] = useState(false);
   const headerHeight = headerProgress.interpolate({
     inputRange: [0, 1],
@@ -242,24 +244,39 @@ function NotesExperience({
       return;
     }
 
-    if (offsetY <= 24 || nativeHeaderCollapsedRef.current) return;
-    nativeHeaderCollapsedRef.current = true;
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setNativeHeaderCollapsed(true);
-    Animated.timing(headerProgress, {
-      toValue: 1,
-      duration: 220,
-      useNativeDriver: true,
-    }).start();
+    if (!nativeHeaderCollapsedRef.current && offsetY > 24) {
+      nativeHeaderCollapsedRef.current = true;
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setNativeHeaderCollapsed(true);
+      Animated.timing(headerProgress, { toValue: 1, duration: 220, useNativeDriver: true }).start();
+    } else if (
+      nativeHeaderCollapsedRef.current &&
+      nativeCanRestoreHeaderRef.current &&
+      offsetY < lastNativeScrollOffsetRef.current - 0.5 &&
+      offsetY <= 2
+    ) {
+      nativeHeaderCollapsedRef.current = false;
+      nativeCanRestoreHeaderRef.current = false;
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setNativeHeaderCollapsed(false);
+      Animated.timing(headerProgress, { toValue: 0, duration: 220, useNativeDriver: true }).start();
+    }
+
+    lastNativeScrollOffsetRef.current = offsetY;
   };
 
-  const restoreNativeHeaderAtTop = (event: any) => {
-    if (Platform.OS === "web" || !nativeHeaderCollapsedRef.current) return;
-    if (event.nativeEvent.contentOffset.y > 2) return;
-    nativeHeaderCollapsedRef.current = false;
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setNativeHeaderCollapsed(false);
-    Animated.timing(headerProgress, { toValue: 0, duration: 220, useNativeDriver: true }).start();
+  const onHomeScrollBeginDrag = (event: any) => {
+    if (Platform.OS === "web") return;
+    const offsetY = event.nativeEvent.contentOffset.y;
+    lastNativeScrollOffsetRef.current = offsetY;
+    nativeCanRestoreHeaderRef.current = nativeHeaderCollapsedRef.current;
+    if (nativeHeaderCollapsedRef.current && offsetY <= 2) {
+      nativeHeaderCollapsedRef.current = false;
+      nativeCanRestoreHeaderRef.current = false;
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setNativeHeaderCollapsed(false);
+      Animated.timing(headerProgress, { toValue: 0, duration: 220, useNativeDriver: true }).start();
+    }
   };
 
   const homeScreen = (
@@ -295,8 +312,7 @@ function NotesExperience({
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
         onScroll={onHomeScroll}
-        onScrollEndDrag={restoreNativeHeaderAtTop}
-        onMomentumScrollEnd={restoreNativeHeaderAtTop}
+        onScrollBeginDrag={onHomeScrollBeginDrag}
       >
         {loading ? <View style={styles.loadingState}><Text style={styles.loadingText}>Gathering your thoughts…</Text></View> : notes.length === 0 ? (
           <View style={styles.emptyWrap}>
