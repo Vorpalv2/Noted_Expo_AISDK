@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Svg, { Circle, Path } from "react-native-svg";
 import RichNoteEditor, { type RichNoteEditorRef } from "../components/RichNoteEditor";
 import {
-  Alert, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
+  Alert, Animated, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
   Text, TextInput, View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -102,6 +102,7 @@ function NotesExperience({
   const [deleting, setDeleting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     const matches = notes.filter((note) => !query || `${note.title} ${note.body}`.toLowerCase().includes(query));
@@ -110,6 +111,15 @@ function NotesExperience({
       recent: matches.filter((note) => !note.pinned).sort((a, b) => b.updatedAt - a.updatedAt),
     };
   }, [notes, search]);
+
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const showSubscription = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSubscription = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    return () => { showSubscription.remove(); hideSubscription.remove(); };
+  }, []);
 
   useEffect(() => {
     if (!active) return;
@@ -169,6 +179,7 @@ function NotesExperience({
         <Text style={styles.homeTitle}>Your notes<Text style={styles.titleDot}>.</Text></Text>
         <Text style={styles.homeSubtitle}>A little space for everything on your mind.</Text>
       </View>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.homeBody}>
       <ScrollView contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {loading ? <View style={styles.loadingState}><Text style={styles.loadingText}>Gathering your thoughts…</Text></View> : notes.length === 0 ? (
@@ -186,7 +197,7 @@ function NotesExperience({
           <Text style={styles.listFootnote}>{notes.length} {notes.length === 1 ? "note" : "notes"} · kept just for you</Text>
         </>}
       </ScrollView>
-      {notes.length > 0 && <View style={[styles.bottomSearchCreate, { bottom: insets.bottom + 14 }]}>
+      {notes.length > 0 && <View style={[styles.bottomSearchCreate, { bottom: keyboardVisible ? 12 : insets.bottom + 14 }]}>
         <View style={styles.bottomSearchWrap}>
           <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" style={styles.bottomSearchIcon}>
             <Circle cx={10.8} cy={10.8} r={6.8} stroke={COLORS.blue} strokeWidth={2} />
@@ -201,6 +212,7 @@ function NotesExperience({
       </View>}
       {busy && <View style={styles.busyVeil}><Text style={styles.busyText}>Opening a fresh page…</Text></View>}
       </View>
+      </KeyboardAvoidingView>
       <DeleteConfirmation note={deleteTarget} error={deleteError} deleting={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} />
     </SafeAreaView>
   );
