@@ -1,18 +1,13 @@
 'use dom';
 
-import { useEffect, useRef, useState, type Ref } from 'react';
-import { useDOMImperativeHandle, type DOMImperativeFactory } from 'expo/dom';
-
-export interface RichNoteEditorRef extends DOMImperativeFactory {
-  flush: () => void;
-}
+import { useEffect, useRef, useState } from 'react';
 
 type Props = {
   noteId: string;
   markdown: string;
+  flushSignal: number;
   onChange: (markdown: string) => Promise<void>;
   onFinish: (markdown: string) => Promise<void>;
-  ref: Ref<RichNoteEditorRef>;
   dom?: import('expo/dom').DOMProps;
 };
 
@@ -132,10 +127,11 @@ function ToolIcon({ name }: { name: ToolIconName }) {
   return <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24" {...shared}>{drawing}</svg>;
 }
 
-export default function RichNoteEditor({ noteId, markdown, onChange, onFinish, ref }: Props) {
+export default function RichNoteEditor({ noteId, markdown, flushSignal, onChange, onFinish }: Props) {
   const editor = useRef<HTMLDivElement>(null);
   const savedRange = useRef<Range | null>(null);
   const loadedNote = useRef<string | null>(null);
+  const lastFlushSignal = useRef(0);
   const [tableOpen, setTableOpen] = useState(false);
   const [rows, setRows] = useState(3);
   const [columns, setColumns] = useState(3);
@@ -143,15 +139,17 @@ export default function RichNoteEditor({ noteId, markdown, onChange, onFinish, r
   const [linkText, setLinkText] = useState('');
   const [linkUrl, setLinkUrl] = useState('https://');
 
-  useDOMImperativeHandle(ref, () => ({
-    flush: () => { void onFinish(editor.current ? markdownFromNode(editor.current).trimEnd() : markdown); },
-  }), [onFinish, markdown]);
-
   useEffect(() => {
     if (loadedNote.current === noteId || !editor.current) return;
     loadedNote.current = noteId;
     editor.current.innerHTML = markdownToHtml(markdown);
   }, [noteId, markdown]);
+
+  useEffect(() => {
+    if (flushSignal <= lastFlushSignal.current) return;
+    lastFlushSignal.current = flushSignal;
+    void onFinish(editor.current ? markdownFromNode(editor.current).trimEnd() : markdown);
+  }, [flushSignal, markdown, onFinish]);
 
   const emitChange = () => {
     if (editor.current) void onChange(markdownFromNode(editor.current).trimEnd());

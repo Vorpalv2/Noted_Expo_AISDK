@@ -5,7 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { Swipeable } from "react-native-gesture-handler";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Svg, { Circle, Path } from "react-native-svg";
-import RichNoteEditor, { type RichNoteEditorRef } from "../components/RichNoteEditor";
+import RichNoteEditor from "../components/RichNoteEditor";
 import {
   Alert, Animated, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
   Text, TextInput, View,
@@ -360,11 +360,11 @@ function PinIcon({ color, size = 18 }: { color: string; size?: number }) {
 }
 
 function Editor({ note, saving, onChange, onClose, onDelete }: { note: Note; saving: boolean; onChange: (part: Partial<Note>) => void; onClose: (latestBody?: string) => void; onDelete: () => void }) {
-  const richEditor = useRef<RichNoteEditorRef>(null);
+  const [flushSignal, setFlushSignal] = useState(0);
   return <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
     <KeyboardAvoidingView style={styles.editor} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.editorNav}>
-        <Pressable onPress={() => { if (richEditor.current) richEditor.current.flush(); else onClose(); }} style={styles.backButton} hitSlop={8}><Text style={styles.backArrow}>‹</Text><Text style={styles.backLabel}>All notes</Text></Pressable>
+        <Pressable onPress={() => setFlushSignal((current) => current + 1)} style={styles.backButton} hitSlop={8}><Text style={styles.backArrow}>‹</Text><Text style={styles.backLabel}>All notes</Text></Pressable>
         <View style={styles.saveStatus}><View style={[styles.saveDot, saving && styles.saveDotBusy]} /><Text style={styles.saveLabel}>{saving ? "Saving" : "Saved"}</Text></View>
         <Pressable onPress={onDelete} hitSlop={12} style={styles.moreButton}><Text style={styles.moreGlyph}>···</Text></Pressable>
       </View>
@@ -372,7 +372,7 @@ function Editor({ note, saving, onChange, onClose, onDelete }: { note: Note; sav
         <TextInput value={note.title} onChangeText={(title) => onChange({ title })} placeholder="Give this note a name" placeholderTextColor="#A3AEC2" style={styles.titleInput} multiline returnKeyType="next" blurOnSubmit={false} />
         <View style={styles.editorRule}><View style={styles.editorRuleAccent} /></View>
       </View>
-      <View style={{ flex: 1, minHeight: 0, width: "100%" }}><RichNoteEditor ref={richEditor} noteId={note._id} markdown={note.body} onChange={async (body) => onChange({ body })} onFinish={async (body) => onClose(body)} dom={{ style: { flex: 1, width: "100%" } }} /></View>
+      <View style={{ flex: 1, minHeight: 0, width: "100%" }}><RichNoteEditor noteId={note._id} markdown={note.body} flushSignal={flushSignal} onChange={async (body) => onChange({ body })} onFinish={async (body) => onClose(body)} dom={{ style: { flex: 1, width: "100%" } }} /></View>
     </KeyboardAvoidingView>
   </SafeAreaView>;
 }
