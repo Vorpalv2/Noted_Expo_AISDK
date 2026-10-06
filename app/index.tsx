@@ -6,7 +6,7 @@ import { Swipeable } from "react-native-gesture-handler";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Svg, { Path } from "react-native-svg";
 import {
-  Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
+  Alert, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
   Text, TextInput, View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -96,6 +96,9 @@ function NotesExperience({
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState("");
   const [active, setActive] = useState<Note | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Note | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
   const filtered = useMemo(() => {
@@ -135,29 +138,26 @@ function NotesExperience({
   const handleTogglePin = (id: string) => {
     Promise.resolve(togglePin(id)).catch(() => Alert.alert("Couldn’t update this note", "Check your connection and try again."));
   };
-  const requestDelete = (note: Note, afterDelete?: () => void) => {
-    const confirmDelete = async () => {
-      try {
-        await Promise.resolve(remove(note._id));
-        afterDelete?.();
-      } catch {
-        Alert.alert("Couldn’t delete this note", "Check your connection and try again.");
-      }
-    };
-    if (Platform.OS === "web") {
-      if (typeof window !== "undefined" && window.confirm("Delete this note? This can’t be undone.")) void confirmDelete();
-      return;
+  const requestDelete = (note: Note) => { setDeleteError(""); setDeleteTarget(note); };
+  const confirmDelete = async () => {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      await Promise.resolve(remove(deleteTarget._id));
+      if (active?._id === deleteTarget._id) setActive(null);
+      setDeleteTarget(null);
+    } catch {
+      setDeleteError("We couldn’t delete this note. Check your connection and try again.");
+    } finally {
+      setDeleting(false);
     }
-    Alert.alert("Delete this note?", "This can’t be undone.", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete note", style: "destructive", onPress: () => { void confirmDelete(); } },
-    ]);
   };
-  const deleteNote = () => { if (active) requestDelete(active, () => setActive(null)); };
+  const deleteNote = () => { if (active) requestDelete(active); };
 
   if (active) return <>
     <StatusBar style="dark" />
     <Editor note={active} saving={saving} onChange={updateActive} onClose={closeEditor} onDelete={deleteNote} />
+    <DeleteConfirmation note={deleteTarget} error={deleteError} deleting={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} />
   </>;
 
   return (
@@ -193,6 +193,7 @@ function NotesExperience({
       {notes.length > 0 && <Pressable style={({ pressed }) => [styles.fab, pressed && styles.pressed]} onPress={createNote} accessibilityLabel="Create a note"><Text style={styles.fabPlus}>+</Text></Pressable>}
       {busy && <View style={styles.busyVeil}><Text style={styles.busyText}>Opening a fresh page…</Text></View>}
       </View>
+      <DeleteConfirmation note={deleteTarget} error={deleteError} deleting={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} />
     </SafeAreaView>
   );
 }
@@ -263,37 +264,70 @@ function PinnedSection({ notes, open, togglePin }: { notes: Note[]; open: (note:
 function RecentSection({ notes, open, togglePin, onDelete, divided }: { notes: Note[]; open: (note: Note) => void; togglePin: (id: string) => void | Promise<unknown>; onDelete: (note: Note) => void; divided: boolean }) {
   return <View style={[styles.section, divided && styles.recentSection]}>
     <View style={styles.sectionHeading}><Text style={styles.sectionTitle}>Recent</Text><Text style={styles.sectionCount}>{String(notes.length).padStart(2, "0")}</Text></View>
-    {notes.map((note) => <Swipeable
-      key={note._id}
-      friction={2}
-      leftThreshold={36}
-      rightThreshold={36}
-      overshootLeft={false}
-      overshootRight={false}
-      renderLeftActions={(_, __, swipeable) => <SwipeAction label="Pin" kind="pin" onPress={() => { swipeable.close(); togglePin(note._id); }} />}
-      renderRightActions={(_, __, swipeable) => <SwipeAction label="Delete" kind="delete" onPress={() => { swipeable.close(); onDelete(note); }} />}
-    >
-      <View style={styles.noteRow}>
-        <Pressable onPress={() => open(note)} style={({ pressed }) => [styles.noteCopy, pressed && styles.rowPressed]}>
-          <Text numberOfLines={1} style={styles.noteTitle}>{note.title.trim() || "Untitled note"}</Text>
-          <Text numberOfLines={1} style={styles.notePreview}>{note.body.trim() || "A new page, ready when you are."}</Text>
-        </Pressable>
-        <View style={styles.noteMeta}><Text style={styles.noteTime}>{relativeTime(note.updatedAt)}</Text><Pressable onPress={() => togglePin(note._id)} hitSlop={12} accessibilityRole="button" accessibilityLabel="Pin note" style={styles.pinButton}><PinIcon color={COLORS.blue} /></Pressable></View>
-      </View>
-    </Swipeable>)}
+    {notes.map((note) => <RecentNoteRow key={note._id} note={note} open={open} togglePin={togglePin} onDelete={onDelete} />)}
   </View>;
 }
 
-function SwipeAction({ label, kind, onPress }: { label: string; kind: "pin" | "delete"; onPress: () => void }) {
+function RecentNoteRow({ note, open, togglePin, onDelete }: { note: Note; open: (note: Note) => void; togglePin: (id: string) => void | Promise<unknown>; onDelete: (note: Note) => void }) {
+  const swipeProgress = useRef(new Animated.Value(0)).current;
+  const animateSwipe = (toValue: number) => Animated.timing(swipeProgress, { toValue, duration: 160, useNativeDriver: false }).start();
+  return <Swipeable
+    friction={2}
+    leftThreshold={36}
+    rightThreshold={36}
+    overshootLeft={false}
+    overshootRight={false}
+    onSwipeableWillOpen={() => animateSwipe(1)}
+    onSwipeableWillClose={() => animateSwipe(0)}
+    renderLeftActions={(progress, _, swipeable) => <SwipeAction label="Pin" kind="pin" progress={progress} onPress={() => { swipeable.close(); togglePin(note._id); }} />}
+    renderRightActions={(progress, _, swipeable) => <SwipeAction label="Delete" kind="delete" progress={progress} onPress={() => { swipeable.close(); onDelete(note); }} />}
+  >
+    <Animated.View style={[styles.noteRow, {
+      opacity: swipeProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 0.82] }),
+      filter: [{ blur: swipeProgress.interpolate({ inputRange: [0, 1], outputRange: [0, 1.2] }) }],
+    }]}>
+      <Pressable onPress={() => open(note)} style={({ pressed }) => [styles.noteCopy, pressed && styles.rowPressed]}>
+        <Text numberOfLines={1} style={styles.noteTitle}>{note.title.trim() || "Untitled note"}</Text>
+        <Text numberOfLines={1} style={styles.notePreview}>{note.body.trim() || "A new page, ready when you are."}</Text>
+      </Pressable>
+      <View style={styles.noteMeta}><Text style={styles.noteTime}>{relativeTime(note.updatedAt)}</Text><Pressable onPress={() => togglePin(note._id)} hitSlop={12} accessibilityRole="button" accessibilityLabel="Pin note" style={styles.pinButton}><PinIcon color={COLORS.blue} /></Pressable></View>
+    </Animated.View>
+  </Swipeable>;
+}
+
+function SwipeAction({ label, kind, progress, onPress }: { label: string; kind: "pin" | "delete"; progress: Animated.AnimatedInterpolation<number>; onPress: () => void }) {
   return <Pressable
     onPress={onPress}
     accessibilityRole="button"
     accessibilityLabel={`${label} note`}
-    style={[styles.swipeAction, kind === "pin" ? styles.swipePin : styles.swipeDelete]}
+    style={[styles.swipeAction, kind === "pin" ? styles.swipePin : styles.swipeDelete, { opacity: progress.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1], extrapolate: "clamp" }) }]}
   >
     {kind === "pin" ? <PinIcon color="white" size={21} /> : <Text style={styles.swipeDeleteGlyph}>×</Text>}
     <Text style={styles.swipeActionLabel}>{label}</Text>
   </Pressable>;
+}
+
+function DeleteConfirmation({ note, error, deleting, onCancel, onConfirm }: { note: Note | null; error: string; deleting: boolean; onCancel: () => void; onConfirm: () => void }) {
+  return <Modal visible={!!note} transparent animationType="fade" onRequestClose={onCancel} statusBarTranslucent>
+    <View style={styles.deleteOverlay}>
+      <View style={styles.deleteCard}>
+        <View style={styles.deleteMark}><Text style={styles.deleteMarkGlyph}>×</Text></View>
+        <Text style={styles.deleteTitle}>Delete this note?</Text>
+        <Text style={styles.deleteBody}>
+          “{note?.title.trim() || "Untitled note"}” will be removed from your notes. This can’t be undone.
+        </Text>
+        {!!error && <Text style={styles.deleteError}>{error}</Text>}
+        <View style={styles.deleteButtons}>
+          <Pressable onPress={onCancel} disabled={deleting} style={({ pressed }) => [styles.deleteCancel, pressed && styles.rowPressed]}>
+            <Text style={styles.deleteCancelText}>Keep note</Text>
+          </Pressable>
+          <Pressable onPress={onConfirm} disabled={deleting} style={({ pressed }) => [styles.deleteConfirm, pressed && styles.deletePressed, deleting && styles.deleteDisabled]}>
+            <Text style={styles.deleteConfirmText}>{deleting ? "Deleting…" : "Delete note"}</Text>
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  </Modal>;
 }
 
 function PinIcon({ color, size = 18 }: { color: string; size?: number }) {
@@ -360,6 +394,11 @@ const styles = StyleSheet.create({
   recentSection: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.line, paddingTop: 21, marginTop: 0 },
   noteRow: { minHeight: 82, flexDirection: "row", alignItems: "center", borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line, paddingVertical: 14 }, rowPressed: { opacity: 0.65 }, noteCopy: { flex: 1, paddingRight: 10 }, noteTitle: { color: COLORS.ink, fontSize: 16.5, fontWeight: "600", letterSpacing: -0.25 }, notePreview: { color: COLORS.muted, fontSize: 13.5, lineHeight: 18, marginTop: 5 }, noteMeta: { width: 77, alignItems: "center", flexDirection: "row", justifyContent: "space-between" }, noteTime: { color: "#9AA5B7", fontSize: 11, marginBottom: 2 },
   swipeAction: { width: 84, alignItems: "center", justifyContent: "center", gap: 5 }, swipePin: { backgroundColor: COLORS.blue }, swipeDelete: { backgroundColor: "#D64A55" }, swipeActionLabel: { color: "white", fontSize: 11, fontWeight: "700" }, swipeDeleteGlyph: { color: "white", fontSize: 26, lineHeight: 26, fontWeight: "300" },
+  deleteOverlay: { flex: 1, backgroundColor: "rgba(10, 20, 44, 0.38)", alignItems: "center", justifyContent: "center", paddingHorizontal: 26 },
+  deleteCard: { width: "100%", maxWidth: 390, backgroundColor: "white", borderRadius: 25, paddingHorizontal: 24, paddingTop: 25, paddingBottom: 22, shadowColor: "#0A1633", shadowOpacity: 0.2, shadowRadius: 26, shadowOffset: { width: 0, height: 12 }, elevation: 12 },
+  deleteMark: { width: 43, height: 43, borderRadius: 15, backgroundColor: "#FFF0F1", alignItems: "center", justifyContent: "center", marginBottom: 17 }, deleteMarkGlyph: { color: "#D64A55", fontSize: 27, lineHeight: 30, fontWeight: "300", marginTop: -2 },
+  deleteTitle: { color: COLORS.ink, fontFamily: "serif", fontSize: 25, lineHeight: 31, fontWeight: "600", letterSpacing: -0.45 }, deleteBody: { color: COLORS.muted, fontSize: 15, lineHeight: 22, marginTop: 8 }, deleteError: { color: "#B92E3A", fontSize: 13, lineHeight: 18, marginTop: 12 },
+  deleteButtons: { flexDirection: "row", gap: 10, marginTop: 23 }, deleteCancel: { flex: 1, height: 48, borderRadius: 14, borderWidth: 1, borderColor: COLORS.line, alignItems: "center", justifyContent: "center" }, deleteCancelText: { color: COLORS.ink, fontSize: 14, fontWeight: "600" }, deleteConfirm: { flex: 1, height: 48, borderRadius: 14, backgroundColor: "#D64A55", alignItems: "center", justifyContent: "center" }, deleteConfirmText: { color: "white", fontSize: 14, fontWeight: "700" }, deletePressed: { opacity: 0.85, transform: [{ scale: 0.98 }] }, deleteDisabled: { opacity: 0.6 },
   listFootnote: { textAlign: "center", color: "#A5B0C1", fontSize: 11, marginTop: 0 },
   fab: { position: "absolute", right: 23, bottom: 26, width: 59, height: 59, borderRadius: 21, backgroundColor: COLORS.blue, justifyContent: "center", alignItems: "center", shadowColor: COLORS.blue, shadowOpacity: 0.28, shadowRadius: 13, shadowOffset: { width: 0, height: 6 }, elevation: 6 }, pressed: { opacity: 0.82, transform: [{ scale: 0.97 }] }, fabPlus: { fontSize: 34, fontWeight: "300", color: "white", marginTop: -3 },
   emptyWrap: { flex: 1, minHeight: 510, borderRadius: 24, backgroundColor: COLORS.blue, marginTop: 8, marginHorizontal: -23, paddingHorizontal: 31, paddingTop: 44, paddingBottom: 35, alignItems: "flex-start", justifyContent: "center" },
