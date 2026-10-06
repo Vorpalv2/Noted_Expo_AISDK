@@ -316,6 +316,7 @@ function NotesExperience({
         </View>
       )}
       <Animated.ScrollView
+        style={styles.recentNotesScroll}
         contentContainerStyle={styles.listContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -617,8 +618,9 @@ function markdownExcerpt(markdown: string) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.background },
   homeRoot: { backgroundColor: COLORS.background },
-  homeBody: { flex: 1, backgroundColor: COLORS.background },
-  pinnedSectionFrame: { paddingHorizontal: 23, paddingTop: 16 },
+  homeBody: { flex: 1, minHeight: 0, backgroundColor: COLORS.background },
+  pinnedSectionFrame: { flexShrink: 0, paddingHorizontal: 23, paddingTop: 16, zIndex: 1, elevation: 1 },
+  recentNotesScroll: { flex: 1, minHeight: 0 },
   homeHeader: { backgroundColor: COLORS.blue, paddingHorizontal: 25, paddingTop: 8, paddingBottom: 35, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
   brandLine: { flexDirection: "row", alignItems: "center", marginBottom: 31 },
   brandMark: { width: 23, height: 23, borderRadius: 8, backgroundColor: "white", justifyContent: "center", alignItems: "center", transform: [{ rotate: "-8deg" }] },
