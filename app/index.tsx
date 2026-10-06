@@ -354,7 +354,7 @@ function Editor({ note, saving, onChange, onClose, onDelete }: { note: Note; sav
     setSelection(nextSelection);
     requestAnimationFrame(() => {
       bodyInput.current?.focus();
-      bodyInput.current?.setNativeProps({ selection: nextSelection });
+      if (Platform.OS !== "web") bodyInput.current?.setNativeProps({ selection: nextSelection });
     });
   };
 
