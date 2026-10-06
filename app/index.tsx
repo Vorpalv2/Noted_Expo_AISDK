@@ -99,6 +99,7 @@ function NotesExperience({
   const { width: screenWidth } = useWindowDimensions();
   const editorTranslateX = useRef(new Animated.Value(screenWidth)).current;
   const headerProgress = useRef(new Animated.Value(0)).current;
+  const nativeHeaderCollapsedRef = useRef(false);
   const [nativeHeaderCollapsed, setNativeHeaderCollapsed] = useState(false);
   const headerHeight = headerProgress.interpolate({
     inputRange: [0, 1],
@@ -241,15 +242,24 @@ function NotesExperience({
       return;
     }
 
-    const shouldCollapse = nativeHeaderCollapsed ? offsetY > 1 : offsetY > 24;
-    if (shouldCollapse === nativeHeaderCollapsed) return;
+    if (offsetY <= 24 || nativeHeaderCollapsedRef.current) return;
+    nativeHeaderCollapsedRef.current = true;
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setNativeHeaderCollapsed(shouldCollapse);
+    setNativeHeaderCollapsed(true);
     Animated.timing(headerProgress, {
-      toValue: shouldCollapse ? 1 : 0,
+      toValue: 1,
       duration: 220,
       useNativeDriver: true,
     }).start();
+  };
+
+  const restoreNativeHeaderAtTop = (event: any) => {
+    if (Platform.OS === "web" || !nativeHeaderCollapsedRef.current) return;
+    if (event.nativeEvent.contentOffset.y > 2) return;
+    nativeHeaderCollapsedRef.current = false;
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setNativeHeaderCollapsed(false);
+    Animated.timing(headerProgress, { toValue: 0, duration: 220, useNativeDriver: true }).start();
   };
 
   const homeScreen = (
@@ -285,6 +295,8 @@ function NotesExperience({
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
         onScroll={onHomeScroll}
+        onScrollEndDrag={restoreNativeHeaderAtTop}
+        onMomentumScrollEnd={restoreNativeHeaderAtTop}
       >
         {loading ? <View style={styles.loadingState}><Text style={styles.loadingText}>Gathering your thoughts…</Text></View> : notes.length === 0 ? (
           <View style={styles.emptyWrap}>
