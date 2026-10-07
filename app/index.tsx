@@ -75,6 +75,35 @@ function ConnectedNotesApp() {
   const updateMutation = useMutation(api.notes.update);
   const pinMutation = useMutation(api.notes.togglePin);
   const removeMutation = useMutation(api.notes.remove);
+  const importLocalMutation = useMutation(api.notes.importLocal);
+  const [syncReady, setSyncReady] = useState(false);
+  const migrationAttempted = useRef(false);
+  useEffect(() => {
+    if (notes === undefined || migrationAttempted.current) return;
+    migrationAttempted.current = true;
+    void (async () => {
+      const migrationKey = `${STORAGE_KEY}.convex-imported.${process.env.EXPO_PUBLIC_CONVEX_URL}`;
+      const imported = await AsyncStorage.getItem(migrationKey);
+      if (imported) { setSyncReady(true); return; }
+      if (notes.length > 0) {
+        await AsyncStorage.setItem(migrationKey, "done");
+        setSyncReady(true);
+        return;
+      }
+      const saved = await AsyncStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const localNotes = JSON.parse(saved) as Note[];
+        if (localNotes.length > 0) {
+          await importLocalMutation({ notes: localNotes.map(({ title, body, pinned, createdAt, updatedAt }) => ({ title, body, pinned, createdAt, updatedAt })) });
+        }
+      }
+      await AsyncStorage.setItem(migrationKey, "done");
+      setSyncReady(true);
+    })().catch((error) => {
+      console.error("Could not sync existing local notes to Convex", error);
+      setSyncReady(true);
+    });
+  }, [notes, importLocalMutation]);
   return <NotesExperience notes={notes ?? []}
     create={async () => {
       const id = await createMutation({ title: "", body: "" });
@@ -83,7 +112,7 @@ function ConnectedNotesApp() {
     save={(note) => updateMutation({ id: note._id as any, title: note.title, body: note.body })}
     togglePin={(id) => pinMutation({ id: id as any })}
     remove={(id) => removeMutation({ id: id as any })}
-    loading={notes === undefined} />;
+    loading={notes === undefined || !syncReady} />;
 }
 
 export default function Index() {

@@ -16,6 +16,26 @@ export const create = mutation({
   },
 });
 
+export const importLocal = mutation({
+  args: {
+    notes: v.array(v.object({
+      title: v.string(),
+      body: v.string(),
+      pinned: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })),
+  },
+  handler: async (ctx, { notes }) => {
+    // Only seed an empty deployment. A second device must never duplicate or
+    // overwrite notes after another client has started using the cloud list.
+    const existing = await ctx.db.query("notes").first();
+    if (existing) return 0;
+    for (const note of notes) await ctx.db.insert("notes", note);
+    return notes.length;
+  },
+});
+
 export const update = mutation({
   args: { id: v.id("notes"), title: v.string(), body: v.string() },
   handler: async (ctx, { id, ...fields }) => {
