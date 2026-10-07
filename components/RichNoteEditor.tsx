@@ -9,6 +9,11 @@ type Props = {
   flushSignal: number;
   safeBottom?: number;
   darkMode?: boolean;
+  taskRemindersEnabled?: boolean;
+  keyboardVisible?: boolean;
+  scheduleTaskReminder?: (reminder: { taskId: string; task: string; remindAt: number; requestPermission?: boolean }) => Promise<void>;
+  cancelTaskReminder?: (taskId: string) => Promise<void>;
+  openTaskReminder?: (reminder: { taskId: string; task: string; remindAt: number }) => Promise<number | null>;
   onChange: (markdown: string) => Promise<void>;
   onFinish: (markdown: string) => Promise<void>;
   onReady: () => void;
@@ -24,6 +29,78 @@ function inline(value: string) {
     .replace(/~~([^~]+)~~/g, '<s>$1</s>')
     .replace(/\*([^*]+)\*|_([^_]+)_/g, '<em>$1$2</em>')
     .replace(/`([^`]+)`/g, '<code>$1</code>');
+}
+
+function taskCheckbox(checked: boolean) {
+  const state = checked ? 'true' : 'false';
+  return `<button type="button" class="task-checkbox" contenteditable="false" role="checkbox" aria-checked="${state}" aria-label="${checked ? 'Mark task incomplete' : 'Mark task complete'}"><span aria-hidden="true"></span></button>`;
+}
+
+function taskReminderButton(active = false, disabled = false) {
+  return `<button type="button" class="task-reminder" aria-label="Set task reminder" title="Set reminder" contenteditable="false"${disabled ? ' disabled' : ''}${active ? ' data-reminder-active="true"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 1.5M9 2h6M12 2v3"/></svg></button>`;
+}
+
+function formatReminderDate(remindAt: number) {
+  const date = new Date(remindAt);
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  const sameDay = (left: Date, right: Date) => left.getFullYear() === right.getFullYear() && left.getMonth() === right.getMonth() && left.getDate() === right.getDate();
+  const dateLabel = sameDay(date, now) ? 'Today' : sameDay(date, tomorrow) ? 'Tomorrow' : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const timeLabel = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return `${dateLabel} · ${timeLabel}`;
+}
+
+function taskReminderInfo(remindAt: number) {
+  return `<div class="task-reminder-info" contenteditable="false"><span class="task-reminder-when"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 1.5M9 2h6M12 2v3"/></svg>${escapeHtml(formatReminderDate(remindAt))}</span><span class="task-reminder-set">Reminder set</span></div>`;
+}
+
+function taskReminderMeta(id: string, remindAt: number) {
+  return `<!-- noted-reminder:${id}:${remindAt} -->`;
+}
+
+function createTaskId() {
+  return globalThis.crypto?.randomUUID?.() ?? `task-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function reminderFields(task: string) {
+  const match = task.match(/\s*<!-- noted-reminder:([\w-]+):(\d+) -->\s*$/);
+  return {
+    text: match ? task.slice(0, match.index).trimEnd() : task,
+    id: match?.[1] ?? '',
+    remindAt: match ? Number(match[2]) : 0,
+  };
+}
+
+const editablePlaceholder = '\u200B';
+
+function toLocalDateTimeInput(value: number) {
+  const date = new Date(value);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+function normalizeTaskLists(root: HTMLElement) {
+  root.querySelectorAll<HTMLUListElement>('ul[data-task-list="true"]').forEach((list) => {
+    Array.from(list.children).filter((child): child is HTMLLIElement => child instanceof HTMLLIElement).forEach((item) => {
+      if (!item.querySelector(':scope > .task-checkbox')) {
+        const oldMarker = item.firstChild;
+        const marker = oldMarker?.nodeType === Node.TEXT_NODE ? oldMarker.textContent?.match(/^\s*[☐☑]\s*/) : null;
+        if (marker && oldMarker) oldMarker.textContent = oldMarker.textContent?.slice(marker[0].length) ?? '';
+        item.insertAdjacentHTML('afterbegin', taskCheckbox(false));
+      }
+      if (!item.querySelector(':scope > .task-text')) {
+        const text = document.createElement('span');
+        text.className = 'task-text';
+        Array.from(item.childNodes).forEach((child) => {
+          if (!(child instanceof HTMLElement && child.classList.contains('task-checkbox'))) text.appendChild(child);
+        });
+        item.appendChild(text);
+      }
+      if (!item.querySelector(':scope > .task-reminder')) {
+        item.querySelector(':scope > .task-checkbox')?.insertAdjacentHTML('afterend', taskReminderButton());
+      }
+    });
+  });
 }
 
 function markdownToHtml(markdown: string) {
@@ -61,10 +138,14 @@ function markdownToHtml(markdown: string) {
         const match = lines[index].match(/^\s*(?:([-+*])|(\d+[.)]))\s+(.+)$/);
         if (!match || !!match[2] !== ordered) break;
         const task = match[3].match(/^\[([ xX])\]\s*(.*)$/);
-        items.push(`<li>${task ? `${task[1].toLowerCase() === 'x' ? '☑' : '☐'} ${inline(task[2])}` : inline(match[3])}</li>`);
+        const taskContent = task ? reminderFields(task[2]) : null;
+        items.push(task
+          ? `<li data-task-id="${escapeHtml(taskContent!.id)}" data-remind-at="${taskContent!.remindAt || ''}">${taskCheckbox(task[1].toLowerCase() === 'x')}${taskReminderButton(Boolean(taskContent!.remindAt && task[1].toLowerCase() !== 'x'), task[1].toLowerCase() === 'x')}<span class="task-text">${inline(taskContent!.text) || editablePlaceholder}</span>${taskContent!.remindAt && task[1].toLowerCase() !== 'x' ? taskReminderInfo(taskContent!.remindAt) : ''}</li>`
+          : `<li>${inline(match[3])}</li>`);
         index++;
       }
-      output.push(`<${ordered ? 'ol' : 'ul'}>${items.join('')}</${ordered ? 'ol' : 'ul'}>`);
+      const taskList = !ordered && items.some((item) => item.includes('class="task-checkbox"'));
+      output.push(`<${ordered ? 'ol' : 'ul'}${taskList ? ' data-task-list="true"' : ''}>${items.join('')}</${ordered ? 'ol' : 'ul'}>`);
       continue;
     }
     const image = line.match(/^!\[([^\]]*)\]\((https?:\/\/[^)]+)\)$/);
@@ -76,7 +157,7 @@ function markdownToHtml(markdown: string) {
 }
 
 function markdownFromNode(node: Node): string {
-  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+  if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? '').replace(/\u200B/g, '');
   if (!(node instanceof HTMLElement)) return '';
   const tag = node.tagName.toLowerCase();
   const children = () => Array.from(node.childNodes).map(markdownFromNode).join('');
@@ -98,6 +179,15 @@ function markdownFromNode(node: Node): string {
     return [`| ${rows[0].join(' | ')} |`, `| ${Array(width).fill('---').join(' | ')} |`, ...rows.slice(1).map((row) => `| ${row.join(' | ')} |`)].join('\n') + '\n\n';
   }
   if (tag === 'ul' || tag === 'ol') return Array.from(node.children).map((child, index) => {
+    const checkbox = child instanceof HTMLElement ? child.querySelector<HTMLButtonElement>(':scope > .task-checkbox') : null;
+    if (checkbox) {
+      const text = child.querySelector<HTMLElement>(':scope > .task-text');
+      const checked = checkbox.getAttribute('aria-checked') === 'true';
+      const id = child.getAttribute('data-task-id') ?? '';
+      const remindAt = Number(child.getAttribute('data-remind-at')) || 0;
+      const reminder = !checked && id && remindAt ? ` ${taskReminderMeta(id, remindAt)}` : '';
+      return `- [${checked ? 'x' : ' '}] ${text ? markdownFromNode(text).trim() : ''}${reminder}`;
+    }
     const value = markdownFromNode(child).trim();
     const task = value.match(/^([☐☑])\s*(.*)$/);
     return task ? `- [${task[1] === '☑' ? 'x' : ' '}] ${task[2]}` : `${tag === 'ol' ? `${index + 1}.` : '-'} ${value}`;
@@ -131,7 +221,7 @@ function ToolIcon({ name }: { name: ToolIconName }) {
   return <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24" {...shared}>{drawing}</svg>;
 }
 
-export default function RichNoteEditor({ noteId, markdown, replaceSignal = 0, flushSignal, safeBottom = 0, darkMode = false, onChange, onFinish, onReady }: Props) {
+export default function RichNoteEditor({ noteId, markdown, replaceSignal = 0, flushSignal, safeBottom = 0, darkMode = false, taskRemindersEnabled = false, keyboardVisible = false, scheduleTaskReminder, cancelTaskReminder, openTaskReminder, onChange, onFinish, onReady }: Props) {
   const editor = useRef<HTMLDivElement>(null);
   const savedRange = useRef<Range | null>(null);
   const loadedNote = useRef<string | null>(null);
@@ -144,21 +234,33 @@ export default function RichNoteEditor({ noteId, markdown, replaceSignal = 0, fl
   const [linkText, setLinkText] = useState('');
   const [linkUrl, setLinkUrl] = useState('https://');
   const [activeTools, setActiveTools] = useState<Set<ToolIconName>>(() => new Set());
-  const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
+  const [toolbarCollapsed, setToolbarCollapsed] = useState(true);
+  const [reminderTask, setReminderTask] = useState<HTMLLIElement | null>(null);
+  const [reminderDate, setReminderDate] = useState('');
+  const [reminderError, setReminderError] = useState('');
   const toolbarRail = useRef<HTMLDivElement>(null);
   const toolbarDragStart = useRef<{ x: number; y: number; left: number } | null>(null);
+  const focusedLineScrollTimers = useRef<number[]>([]);
+
+  useEffect(() => {
+    setToolbarCollapsed(true);
+  }, [noteId]);
 
   useEffect(() => {
     if (loadedNote.current === noteId || !editor.current) return;
     loadedNote.current = noteId;
     editor.current.innerHTML = markdownToHtml(markdown);
+    void restoreReminders();
     onReady();
   }, [noteId, markdown, onReady]);
 
   useEffect(() => {
     if (replaceSignal === lastReplaceSignal.current) return;
     lastReplaceSignal.current = replaceSignal;
-    if (editor.current) editor.current.innerHTML = markdownToHtml(markdown);
+    if (editor.current) {
+      editor.current.innerHTML = markdownToHtml(markdown);
+      void restoreReminders();
+    }
   }, [replaceSignal, markdown]);
 
   useEffect(() => {
@@ -169,6 +271,165 @@ export default function RichNoteEditor({ noteId, markdown, replaceSignal = 0, fl
 
   const emitChange = () => {
     if (editor.current) void onChange(markdownFromNode(editor.current).trimEnd());
+  };
+  const handleEditorInput = () => {
+    if (!editor.current) return;
+    normalizeTaskLists(editor.current);
+    emitChange();
+    syncActiveTools();
+  };
+  const handleEditorClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const checkbox = target.closest<HTMLButtonElement>('.task-checkbox');
+    const reminderButton = target.closest<HTMLButtonElement>('.task-reminder');
+    if (reminderButton && editor.current?.contains(reminderButton)) {
+      event.preventDefault();
+      event.stopPropagation();
+      const item = reminderButton.closest<HTMLLIElement>('li');
+      if (!item) return;
+      const existing = Number(item.dataset.remindAt);
+      if (openTaskReminder && scheduleTaskReminder) {
+        editor.current.blur();
+        reminderButton.disabled = true;
+        const taskId = item.dataset.taskId || createTaskId();
+        const task = item.querySelector<HTMLElement>(':scope > .task-text')?.textContent?.trim() ?? 'Untitled task';
+        item.dataset.taskId = taskId;
+        void openTaskReminder({ taskId, task, remindAt: existing }).then(async (remindAt) => {
+          if (!remindAt) return;
+          await scheduleTaskReminder({ taskId, task, remindAt, requestPermission: true });
+          item.dataset.remindAt = String(remindAt);
+          item.querySelector(':scope > .task-reminder-info')?.remove();
+          item.insertAdjacentHTML('beforeend', taskReminderInfo(remindAt));
+          reminderButton.setAttribute('data-reminder-active', 'true');
+          emitChange();
+        }).catch(() => setReminderError('Could not schedule the reminder. Check notification permissions and try again.')).finally(() => {
+          reminderButton.disabled = false;
+        });
+        return;
+      }
+      setReminderDate(toLocalDateTimeInput(existing > Date.now() ? existing : Date.now() + 60 * 60 * 1000));
+      setReminderError('');
+      setReminderTask(item);
+      return;
+    }
+    if (!checkbox || !editor.current?.contains(checkbox)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    editor.current.blur();
+    checkbox.blur();
+    const checked = checkbox.getAttribute('aria-checked') !== 'true';
+    checkbox.setAttribute('aria-checked', String(checked));
+    checkbox.setAttribute('aria-label', checked ? 'Mark task incomplete' : 'Mark task complete');
+    const taskReminderControl = checkbox.parentElement?.querySelector<HTMLButtonElement>(':scope > .task-reminder');
+    if (taskReminderControl) taskReminderControl.disabled = checked;
+    const taskItem = checkbox.closest<HTMLLIElement>('li');
+    if (checked && taskItem) {
+      const taskId = taskItem.dataset.taskId;
+      if (taskId) void cancelTaskReminder?.(taskId);
+      taskItem.dataset.remindAt = '';
+      taskItem.querySelector(':scope > .task-reminder-info')?.remove();
+      taskItem.querySelector('.task-reminder')?.removeAttribute('data-reminder-active');
+    }
+    emitChange();
+  };
+  const restoreReminders = async () => {
+    if (!taskRemindersEnabled || !scheduleTaskReminder || !editor.current) return;
+    const tasks = Array.from(editor.current.querySelectorAll<HTMLLIElement>('ul[data-task-list="true"] > li'));
+    for (const item of tasks) {
+      const checkbox = item.querySelector<HTMLButtonElement>(':scope > .task-checkbox');
+      const remindAt = Number(item.dataset.remindAt) || 0;
+      if (!checkbox || !remindAt) continue;
+      if (checkbox.getAttribute('aria-checked') === 'true') {
+        const taskId = item.dataset.taskId;
+        if (taskId) await cancelTaskReminder?.(taskId);
+        item.dataset.remindAt = '';
+        emitChange();
+        continue;
+      }
+      if (!item.dataset.taskId) item.dataset.taskId = createTaskId();
+      const task = item.querySelector<HTMLElement>(':scope > .task-text')?.textContent?.trim() ?? 'Untitled task';
+      await scheduleTaskReminder({ taskId: item.dataset.taskId, task, remindAt, requestPermission: false });
+    }
+  };
+  const saveTaskReminder = async () => {
+    if (!reminderTask || !scheduleTaskReminder) return;
+    const remindAt = new Date(reminderDate).getTime();
+    if (!Number.isFinite(remindAt) || remindAt <= Date.now()) {
+      setReminderError('Choose a time in the future.');
+      return;
+    }
+    const taskText = reminderTask.querySelector<HTMLElement>(':scope > .task-text')?.textContent?.trim() ?? '';
+    const taskId = reminderTask.dataset.taskId || createTaskId();
+    try {
+      await scheduleTaskReminder({ taskId, task: taskText || 'Untitled task', remindAt, requestPermission: true });
+      reminderTask.dataset.taskId = taskId;
+      reminderTask.dataset.remindAt = String(remindAt);
+      reminderTask.querySelector(':scope > .task-reminder-info')?.remove();
+      reminderTask.insertAdjacentHTML('beforeend', taskReminderInfo(remindAt));
+      reminderTask.querySelector('.task-reminder')?.setAttribute('data-reminder-active', 'true');
+      emitChange();
+      setReminderTask(null);
+    } catch {
+      setReminderError('Could not schedule the reminder. Check notification permissions and try again.');
+    }
+  };
+  const handleMobileListEnter = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Enter' || !/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || !editor.current) return;
+    const selection = window.getSelection();
+    if (!selection?.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    const anchor = range.startContainer;
+    const element = anchor instanceof HTMLElement ? anchor : anchor.parentElement;
+    const item = element?.closest('li');
+    const list = item?.parentElement;
+    if (!item || !list || !editor.current.contains(item) || !['UL', 'OL'].includes(list.tagName)) return;
+
+    const taskList = list.matches('ul[data-task-list="true"]');
+    const currentText = taskList ? item.querySelector<HTMLElement>(':scope > .task-text') : item;
+    if (!currentText || !currentText.textContent?.trim()) return;
+
+    event.preventDefault();
+    if (!range.collapsed) range.deleteContents();
+    if (range.startContainer !== currentText && !currentText.contains(range.startContainer)) {
+      range.selectNodeContents(currentText);
+      range.collapse(false);
+    }
+
+    const tail = document.createRange();
+    tail.setStart(range.startContainer, range.startOffset);
+    tail.setEnd(currentText, currentText.childNodes.length);
+    const trailingContent = tail.extractContents();
+    if (!currentText.hasChildNodes()) currentText.appendChild(document.createElement('br'));
+
+    const nextItem = document.createElement('li');
+    let nextText: HTMLElement;
+    if (taskList) {
+        nextItem.innerHTML = `${taskCheckbox(false)}${taskReminderButton()}<span class="task-text"></span>`;
+      nextText = nextItem.querySelector<HTMLElement>(':scope > .task-text')!;
+    } else {
+      nextText = nextItem;
+    }
+    nextText.appendChild(trailingContent);
+    let placeholder: Text | null = null;
+    if (!nextText.hasChildNodes()) {
+      placeholder = document.createTextNode(editablePlaceholder);
+      nextText.appendChild(placeholder);
+    }
+    item.parentElement?.insertBefore(nextItem, item.nextSibling);
+
+    const caret = document.createRange();
+    if (placeholder) caret.setStart(placeholder, placeholder.length);
+    else {
+      caret.selectNodeContents(nextText);
+      caret.collapse(true);
+    }
+    editor.current.focus({ preventScroll: true });
+    selection.removeAllRanges();
+    selection.addRange(caret);
+    savedRange.current = caret.cloneRange();
+    emitChange();
+    syncActiveTools();
   };
   const syncActiveTools = () => {
     if (!editor.current) return;
@@ -201,6 +462,33 @@ export default function RichNoteEditor({ noteId, markdown, replaceSignal = 0, fl
     const selection = window.getSelection();
     if (selection?.rangeCount && editor.current?.contains(selection.anchorNode)) savedRange.current = selection.getRangeAt(0).cloneRange();
   };
+  const scrollFocusedLineToTop = (delays: number[] = [0]) => {
+    focusedLineScrollTimers.current.forEach(window.clearTimeout);
+    focusedLineScrollTimers.current = delays.map((delay) => window.setTimeout(() => {
+      const root = editor.current;
+      const bodyScroll = root?.closest<HTMLElement>('.body-scroll');
+      const selection = window.getSelection();
+      const anchor = selection?.anchorNode;
+      const element = anchor instanceof Element ? anchor : anchor?.parentElement;
+      if (!root || !bodyScroll || !element || !root.contains(element)) return;
+      const line = element.closest<HTMLElement>('li, p, h1, h2, h3, h4, h5, h6, blockquote, pre, td, th') ?? root;
+      const scrollRect = bodyScroll.getBoundingClientRect();
+      const lineRect = line.getBoundingClientRect();
+      const caretRect = selection?.rangeCount ? selection.getRangeAt(0).getBoundingClientRect() : null;
+      const topPadding = Number.parseFloat(window.getComputedStyle(bodyScroll).paddingTop) || 0;
+      const focusTop = caretRect && caretRect.height > 0 ? caretRect.top : lineRect.top;
+      const offset = focusTop - scrollRect.top - topPadding;
+      if (Math.abs(offset) > 3) bodyScroll.scrollTo({ top: bodyScroll.scrollTop + offset, behavior: 'smooth' });
+    }, delay));
+  };
+
+  useEffect(() => {
+    if (!keyboardVisible) return;
+    // The WebView's viewport resizes after the keyboard animation begins.
+    // Re-align once during and once after that resize so the tapped line stays clear.
+    scrollFocusedLineToTop([90, 300]);
+    return () => focusedLineScrollTimers.current.forEach(window.clearTimeout);
+  }, [keyboardVisible]);
   const restoreSelection = () => {
     editor.current?.focus();
     const selection = window.getSelection();
@@ -269,7 +557,20 @@ export default function RichNoteEditor({ noteId, markdown, replaceSignal = 0, fl
     { icon: 'heading', title: 'Heading', action: () => command('formatBlock', 'h2', 'heading') },
     { icon: 'bullets', title: 'Bullet list', action: () => command('insertUnorderedList', undefined, 'bullets', true) },
     { icon: 'numbered', title: 'Numbered list', action: () => command('insertOrderedList', undefined, 'numbered', true) },
-    { icon: 'checklist', title: 'Checklist', action: () => command('insertHTML', '<ul><li>☐ &nbsp;</li></ul><p><br></p>', 'checklist') },
+    { icon: 'checklist', title: 'Checklist', action: () => {
+      command('insertHTML', `<ul data-task-list="true"><li>${taskCheckbox(false)}${taskReminderButton()}<span class="task-text">${editablePlaceholder}</span></li></ul><p><br></p>`, 'checklist');
+      const list = editor.current?.querySelector<HTMLUListElement>('ul[data-task-list="true"]:last-of-type');
+      const text = list?.querySelector<HTMLElement>(':scope > li:last-child > .task-text');
+      if (text) {
+        const range = document.createRange();
+        range.selectNodeContents(text);
+        range.collapse(false);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        savedRange.current = range.cloneRange();
+      }
+    } },
     { icon: 'quote', title: 'Quote', action: () => command('formatBlock', 'blockquote', 'quote') },
     { icon: 'code', title: 'Code', action: () => command('insertHTML', '<code>code</code>', 'code') },
     { icon: 'link', title: 'Insert link', action: () => { rememberSelection(); setLinkText(window.getSelection()?.toString() ?? ''); setLinkOpen(true); } },
@@ -285,7 +586,7 @@ export default function RichNoteEditor({ noteId, markdown, replaceSignal = 0, fl
     toolbar: 'rgba(255, 255, 255, .96)', toolbarBorder: '#e0e6f0', tool: '#53617a', active: '#dce7ff', activeBorder: '#9db8ff',
   };
 
-  return <div className="rich-shell">
+  return <div className={`rich-shell${taskRemindersEnabled ? ' reminders-enabled' : ''}`}>
     <style>{`
       html, body, #root { margin: 0; width: 100%; max-width: 100%; min-width: 0; height: 100%; overflow-x: hidden; background: ${theme.page}; }
       * { box-sizing: border-box; }
@@ -313,6 +614,24 @@ export default function RichNoteEditor({ noteId, markdown, replaceSignal = 0, fl
       .editor h1 { font-size: 29px; } .editor h2 { font-size: 24px; } .editor h3 { font-size: 20px; }
       .editor blockquote { margin: 12px 0; padding-left: 15px; border-left: 3px solid #1749e8; color: ${theme.muted}; }
       .editor ul, .editor ol { padding-left: 24px; margin: 8px 0 13px; }
+      .editor ul[data-task-list="true"] { padding-left: 0; list-style: none; }
+      .editor ul[data-task-list="true"] > li { display: flow-root; margin: 9px 0; }
+      .task-checkbox { float: left; display: grid; place-items: center; width: 23px; height: 23px; margin: 2px 10px 0 0; padding: 0; border: 1.7px solid ${darkMode ? '#71809b' : '#9aa8be'}; border-radius: 7px; background: transparent; color: white; -webkit-tap-highlight-color: transparent; }
+      .task-checkbox span { width: 11px; height: 6px; border: solid currentColor; border-width: 0 0 2px 2px; transform: rotate(-45deg) scale(0); transition: transform 120ms ease; }
+      .task-checkbox[aria-checked="true"] { border-color: #1749e8; background: #1749e8; }
+      .task-checkbox[aria-checked="true"] span { transform: rotate(-45deg) scale(1); }
+      .task-reminder { display: none; float: left; place-items: center; width: 38px; height: 38px; margin: -5px 7px 0 -4px; padding: 0; border: 0; border-radius: 11px; background: transparent; color: ${darkMode ? '#9ba9c0' : '#8190a9'}; font-size: 22px; line-height: 1; -webkit-tap-highlight-color: transparent; }
+      .reminders-enabled .task-reminder { display: grid; }
+      .task-reminder svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+      .task-reminder[data-reminder-active="true"] { color: #1749e8; background: ${theme.pale}; }
+      .task-reminder:disabled { opacity: .4; }
+      .task-reminder:active { background: ${theme.pale}; color: #1749e8; }
+      .task-text { display: block; min-width: 0; min-height: 1.55em; overflow: hidden; }
+      .task-reminder-info { clear: both; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; margin: 1px 0 5px 78px; font-size: 11px; line-height: 1.3; }
+      .task-reminder-when { display: inline-flex; align-items: center; gap: 5px; color: ${darkMode ? '#B8C9F5' : '#526A9E'}; font-weight: 700; }
+      .task-reminder-when svg { width: 13px; height: 13px; fill: none; stroke: #1749e8; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+      .task-reminder-set { color: ${theme.muted}; }
+      .task-checkbox[aria-checked="true"] ~ .task-text { color: ${darkMode ? '#929db1' : '#8290a7'}; text-decoration: line-through; }
       .editor a { color: #1749e8; }
       .editor code { background: ${theme.pale}; border-radius: 4px; padding: 1px 3px; }
       .editor pre { max-width: 100%; background: #101d38; color: white; border-radius: 12px; padding: 14px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
@@ -329,13 +648,15 @@ export default function RichNoteEditor({ noteId, markdown, replaceSignal = 0, fl
       .dialog p { margin: 0 0 16px; color: ${theme.muted}; font-size: 14px; }
       .dimension { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-top: 1px solid ${theme.line}; color: ${theme.ink}; }
       .dialog-input { display: block; width: 100%; height: 44px; margin: 8px 0; padding: 0 12px; border: 1px solid ${theme.line}; border-radius: 10px; color: ${theme.ink}; background: ${theme.surface}; font: inherit; font-size: 14px; }
+      .dialog-input[type="datetime-local"] { color-scheme: ${darkMode ? 'dark' : 'light'}; }
+      .dialog-error { margin-top: 8px !important; color: #d13d45 !important; font-weight: 600; }
       .stepper, .dialog-actions { display: flex; align-items: center; gap: 12px; }
       .stepper button { width: 34px; height: 34px; border: 0; border-radius: 10px; color: #1749e8; background: #eaf0ff; font-size: 20px; }
       .dialog-actions { margin-top: 19px; gap: 10px; }
       .dialog-actions button { flex: 1; height: 47px; border-radius: 13px; border: 1px solid ${theme.line}; background: ${theme.surface}; color: ${theme.ink}; font-weight: 700; }
       .dialog-actions .primary { background: #1749e8; color: white; border-color: #1749e8; }
     `}</style>
-    <div className="body-scroll"><div ref={editor} className="editor" contentEditable suppressContentEditableWarning role="textbox" aria-label="Note body" aria-multiline="true" onInput={() => { emitChange(); syncActiveTools(); }} onKeyUp={() => { rememberSelection(); syncActiveTools(); }} onMouseUp={() => { rememberSelection(); syncActiveTools(); }} onTouchEnd={() => { rememberSelection(); syncActiveTools(); }} /></div>
+    <div className="body-scroll"><div ref={editor} className="editor" contentEditable suppressContentEditableWarning role="textbox" aria-label="Note body" aria-multiline="true" onInput={handleEditorInput} onKeyDown={handleMobileListEnter} onMouseDown={(event) => { if (event.target instanceof Element && event.target.closest('.task-reminder, .task-checkbox')) event.preventDefault(); }} onClick={handleEditorClick} onKeyUp={() => { rememberSelection(); syncActiveTools(); }} onMouseUp={(event) => { rememberSelection(); syncActiveTools(); if (keyboardVisible && event.target instanceof Element && !event.target.closest('button') && editor.current?.contains(event.target)) scrollFocusedLineToTop([0]); }} onTouchEnd={(event) => { rememberSelection(); syncActiveTools(); if (keyboardVisible && event.target instanceof Element && !event.target.closest('button') && editor.current?.contains(event.target)) scrollFocusedLineToTop([0]); }} /></div>
     <div ref={toolbarRail} className={`toolbar-rail${toolbarCollapsed ? ' collapsed' : ''}`}
       onTouchStart={(event) => { const point = event.touches[0]; if (point) startToolbarDrag(point.clientX, point.clientY); }}
       onTouchMove={(event) => { const point = event.touches[0]; if (point) updateToolbarDrag(point.clientX, point.clientY); }}
@@ -359,6 +680,12 @@ export default function RichNoteEditor({ noteId, markdown, replaceSignal = 0, fl
       <div className="dimension"><span>Rows</span><div className="stepper"><button onClick={() => setRows(Math.max(2, rows - 1))}>−</button><b>{rows}</b><button onClick={() => setRows(Math.min(12, rows + 1))}>+</button></div></div>
       <div className="dimension"><span>Columns</span><div className="stepper"><button onClick={() => setColumns(Math.max(1, columns - 1))}>−</button><b>{columns}</b><button onClick={() => setColumns(Math.min(8, columns + 1))}>+</button></div></div>
       <div className="dialog-actions"><button onClick={() => setTableOpen(false)}>Cancel</button><button className="primary" onClick={insertTable}>Insert table</button></div>
+    </div></div>}
+    {taskRemindersEnabled && reminderTask && <div className="veil" role="presentation"><div className="dialog" role="dialog" aria-modal="true" aria-label="Set task reminder">
+      <div className="eyebrow">TASK REMINDER</div><h2>Choose a time</h2><p>{reminderTask.querySelector<HTMLElement>(':scope > .task-text')?.textContent?.trim() || 'Remind me about this task'}</p>
+      <input className="dialog-input" type="datetime-local" value={reminderDate} min={toLocalDateTimeInput(Date.now() + 60000)} onChange={(event) => { setReminderDate(event.target.value); setReminderError(''); }} aria-label="Reminder date and time" />
+      {reminderError && <p className="dialog-error">{reminderError}</p>}
+      <div className="dialog-actions"><button onClick={() => setReminderTask(null)}>Cancel</button><button className="primary" onClick={() => void saveTaskReminder()}>Set reminder</button></div>
     </div></div>}
     {linkOpen && <div className="veil"><div className="dialog">
       <div className="eyebrow">LINK</div><h2>Add a link</h2><p>Give the link a name and paste its address.</p>

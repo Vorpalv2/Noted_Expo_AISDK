@@ -3,12 +3,15 @@ import { useAuthActions, useConvexAuth } from "@convex-dev/auth/react";
 import { anyApi } from "convex/server";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { StatusBar } from "expo-status-bar";
+import * as Notifications from "expo-notifications";
+import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import { Gesture, GestureDetector, Swipeable } from "react-native-gesture-handler";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Svg, { Circle, Path } from "react-native-svg";
 import RichNoteEditor from "../components/RichNoteEditor";
+import Onboarding, { OnboardingBrand } from "../components/Onboarding";
 import {
-  ActivityIndicator, Alert, Animated, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
+  ActivityIndicator, Alert, Animated, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions,
   Text, TextInput, View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -25,6 +28,17 @@ type Note = {
 const api: any = anyApi;
 const STORAGE_KEY = "noted.notes.v1";
 const THEME_STORAGE_KEY = "noted.theme.mode";
+const TASK_REMINDER_STORAGE_KEY = "noted.task-reminders.v1";
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
 const COLORS = {
   blue: "#1749E8", blueDark: "#1038C5", ink: "#101D38", muted: "#75829C",
   line: "#E5EAF3", surface: "#FFFFFF", background: "#F8FAFE", pale: "#EAF0FF", yellow: "#FFD765",
@@ -36,6 +50,80 @@ const DARK_COLORS = {
 };
 type NoteActionMenu = { note: Note; x: number; y: number };
 type NoteAIAction = "summarize" | "improve" | "title" | "tasks";
+
+async function readTaskReminderIds(): Promise<Record<string, string>> {
+  try { return JSON.parse((await AsyncStorage.getItem(TASK_REMINDER_STORAGE_KEY)) ?? "{}"); }
+  catch { return {}; }
+}
+
+async function ensureTaskNotificationPermission(requestPermission: boolean) {
+  if (Platform.OS === "android") {
+    await Notifications.setNotificationChannelAsync("task-reminders", {
+      name: "Task reminders", importance: Notifications.AndroidImportance.HIGH, vibrationPattern: [0, 250, 180, 250],
+    });
+  }
+  const current = await Notifications.getPermissionsAsync();
+  if (!current.granted && !requestPermission) return false;
+  const permission = current.granted
+    ? current
+    : await Notifications.requestPermissionsAsync({
+      ios: { allowAlert: true, allowSound: true, allowBadge: false, allowProvisional: false },
+    });
+  if (!permission.granted) throw new Error("Notifications are disabled.");
+  if (Platform.OS === "ios") {
+    const ios = permission.ios;
+    if (
+      ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL ||
+      ios?.allowsAlert === false ||
+      ios?.allowsDisplayOnLockScreen === false
+    ) {
+      throw new Error("Enable alert and Lock Screen notifications in Settings.");
+    }
+  }
+  return true;
+}
+
+async function scheduleTaskNotification(noteId: string, taskId: string, task: string, remindAt: number, requestPermission = true) {
+  if (Platform.OS === "web") return;
+  if (!await ensureTaskNotificationPermission(requestPermission)) return;
+  const key = `${noteId}:${taskId}`;
+  const ids = await readTaskReminderIds();
+  const oldId = ids[key];
+  if (oldId) await Notifications.cancelScheduledNotificationAsync(oldId).catch(() => undefined);
+  const presented = await Notifications.getPresentedNotificationsAsync();
+  for (const item of presented) {
+    if (item.request.content.data?.noteId === noteId && item.request.content.data?.taskId === taskId) {
+      await Notifications.dismissNotificationAsync(item.request.identifier).catch(() => undefined);
+    }
+  }
+  const identifier = await Notifications.scheduleNotificationAsync({
+    content: {
+      title: "Task reminder",
+      body: task || "You have a task to complete.",
+      data: { noteId, taskId },
+      ...(Platform.OS === "android" ? { autoDismiss: false } : {}),
+    },
+    trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(Math.max(remindAt, Date.now() + 1000)), ...(Platform.OS === "android" ? { channelId: "task-reminders" } : {}) },
+  });
+  ids[key] = identifier;
+  await AsyncStorage.setItem(TASK_REMINDER_STORAGE_KEY, JSON.stringify(ids));
+}
+
+async function cancelTaskNotification(noteId: string, taskId: string) {
+  if (Platform.OS === "web") return;
+  const key = `${noteId}:${taskId}`;
+  const ids = await readTaskReminderIds();
+  const identifier = ids[key];
+  if (identifier) await Notifications.cancelScheduledNotificationAsync(identifier).catch(() => undefined);
+  const presented = await Notifications.getPresentedNotificationsAsync();
+  for (const item of presented) {
+    if (item.request.content.data?.noteId === noteId && item.request.content.data?.taskId === taskId) {
+      await Notifications.dismissNotificationAsync(item.request.identifier).catch(() => undefined);
+    }
+  }
+  delete ids[key];
+  await AsyncStorage.setItem(TASK_REMINDER_STORAGE_KEY, JSON.stringify(ids));
+}
 
 const starterNotes: Note[] = [
   { _id: "sample-1", title: "A slower morning", body: "Leave the phone in the other room. Make coffee, open the windows, and give the day a few quiet minutes before it starts asking for things.", pinned: true, createdAt: Date.now() - 7200000, updatedAt: Date.now() - 7200000 },
@@ -130,7 +218,9 @@ function CloudAuthGate() {
   const { isLoading, isAuthenticated } = useConvexAuth();
   const user = useQuery(api.notes.currentUser, isAuthenticated ? {} : "skip");
   if (isLoading || (isAuthenticated && user === undefined)) return <AuthLoading />;
-  if (!isAuthenticated) return <AuthScreen />;
+  if (!isAuthenticated) {
+    return <Onboarding renderSignIn={() => <AuthScreen />} />;
+  }
   return <ConnectedNotesApp user={user} />;
 }
 
@@ -166,35 +256,42 @@ function AuthScreen() {
   };
   return <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.blue }}>
     <StatusBar style="light" />
-    <View style={{ flex: 1, justifyContent: "center", paddingHorizontal: 26, paddingVertical: 28 }}>
-      <View style={{ marginBottom: 28 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 28 }}>
-          <View style={styles.brandMark}><View style={styles.brandMarkInner} /></View>
-          <Text style={styles.brand}>noted</Text><View style={styles.brandDot} />
-        </View>
-        <Text style={{ color: "white", fontSize: 38, lineHeight: 43, fontWeight: "800", letterSpacing: -1.2 }}>
-          Your thoughts,{"\n"}wherever you are.
-        </Text>
-        <Text style={{ color: "#D9E4FF", fontSize: 15, lineHeight: 22, marginTop: 12 }}>
-          Sign in to keep your notes and app mode in sync.
-        </Text>
+    <View style={{ flex: 1, paddingHorizontal: 26, paddingTop: 8, paddingBottom: 12 }}>
+      <View pointerEvents="none" style={{ position: "absolute", top: "31%", alignSelf: "center", width: 300, height: 300, borderRadius: 150, borderWidth: 1, borderColor: "#FFFFFF18" }} />
+      <View pointerEvents="none" style={{ position: "absolute", top: "36%", alignSelf: "center", width: 224, height: 224, borderRadius: 112, borderWidth: 1, borderColor: "#FFFFFF12" }} />
+      <View style={{ height: 44, flexDirection: "row", alignItems: "center" }}>
+        <OnboardingBrand />
       </View>
-      <View style={{ backgroundColor: "white", borderRadius: 26, padding: 22, shadowColor: "#091D69", shadowOpacity: 0.22, shadowRadius: 22, shadowOffset: { width: 0, height: 10 }, elevation: 10 }}>
-        <Text style={{ color: COLORS.ink, fontSize: 25, lineHeight: 31, fontFamily: "serif", fontWeight: "600", marginBottom: 5 }}>
-          {mode === "signIn" ? "Welcome back" : "Make it yours"}
-        </Text>
-        <Text style={{ color: COLORS.muted, fontSize: 14, lineHeight: 20, marginBottom: 17 }}>
-          {mode === "signIn" ? "Pick up right where you left off." : "Create an account to sync your notes."}
-        </Text>
-        <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" placeholder="Email address" placeholderTextColor="#98A3B6" style={authInputStyle} accessibilityLabel="Email address" />
-        <TextInput value={password} onChangeText={setPassword} secureTextEntry autoComplete={mode === "signUp" ? "new-password" : "password"} placeholder="Password" placeholderTextColor="#98A3B6" style={[authInputStyle, { marginTop: 11 }]} accessibilityLabel="Password" onSubmitEditing={() => void submit()} />
-        {!!error && <Text style={{ color: "#B92E3A", fontSize: 13, lineHeight: 18, marginTop: 11 }}>{error}</Text>}
-        <Pressable onPress={() => void submit()} disabled={submitting} style={({ pressed }) => [{ height: 52, marginTop: 17, borderRadius: 17, backgroundColor: COLORS.blue, alignItems: "center", justifyContent: "center" }, pressed && styles.pressed, submitting && { opacity: 0.7 }]}>
-          {submitting ? <ActivityIndicator color="white" /> : <Text style={{ color: "white", fontWeight: "700", fontSize: 15 }}>{mode === "signIn" ? "Sign in" : "Create account"}</Text>}
-        </Pressable>
-        <Pressable onPress={() => { setMode(mode === "signIn" ? "signUp" : "signIn"); setError(""); }} style={{ alignSelf: "center", padding: 12, marginTop: 5 }}>
-          <Text style={{ color: COLORS.blue, fontWeight: "600", fontSize: 14 }}>{mode === "signIn" ? "New here? Create an account" : "Already have an account? Sign in"}</Text>
-        </Pressable>
+      <View style={{ flex: 1, justifyContent: "center" }}>
+        <View style={{ marginBottom: 28 }}>
+          <Text style={{ color: "#BFD0FF", fontSize: 11, fontWeight: "800", letterSpacing: 2, marginBottom: 12 }}>YOUR NOTES START HERE</Text>
+          <Text style={{ maxWidth: 360, color: "white", fontFamily: "serif", fontSize: 36, lineHeight: 41, fontWeight: "700", letterSpacing: -0.8 }}>
+            Your thoughts,{"\n"}wherever you are.
+          </Text>
+          <Text style={{ maxWidth: 345, color: "#D9E4FF", fontSize: 16, lineHeight: 24, marginTop: 12 }}>
+            Sign in to keep your notes and app mode in sync.
+          </Text>
+        </View>
+        <View style={{ backgroundColor: "white", borderRadius: 26, padding: 22, shadowColor: "#091D69", shadowOpacity: 0.22, shadowRadius: 22, shadowOffset: { width: 0, height: 10 }, elevation: 10 }}>
+          <Text style={{ color: COLORS.ink, fontSize: 25, lineHeight: 31, fontFamily: "serif", fontWeight: "600", marginBottom: 5 }}>
+            {mode === "signIn" ? "Welcome back" : "Make it yours"}
+          </Text>
+          <Text style={{ color: COLORS.muted, fontSize: 14, lineHeight: 20, marginBottom: 17 }}>
+            {mode === "signIn" ? "Pick up right where you left off." : "Create an account to sync your notes."}
+          </Text>
+          <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" placeholder="Email address" placeholderTextColor="#98A3B6" style={authInputStyle} accessibilityLabel="Email address" />
+          <TextInput value={password} onChangeText={setPassword} secureTextEntry autoComplete={mode === "signUp" ? "new-password" : "password"} placeholder="Password" placeholderTextColor="#98A3B6" style={[authInputStyle, { marginTop: 11 }]} accessibilityLabel="Password" onSubmitEditing={() => void submit()} />
+          {!!error && <Text style={{ color: "#B92E3A", fontSize: 13, lineHeight: 18, marginTop: 11 }}>{error}</Text>}
+          <Pressable onPress={() => void submit()} disabled={submitting} style={({ pressed }) => [{ height: 52, marginTop: 17, borderRadius: 17, backgroundColor: COLORS.blue, alignItems: "center", justifyContent: "center" }, pressed && styles.pressed, submitting && { opacity: 0.7 }]}>
+            {submitting ? <ActivityIndicator color="white" /> : <Text style={{ color: "white", fontWeight: "700", fontSize: 15 }}>{mode === "signIn" ? "Sign in" : "Create account"}</Text>}
+          </Pressable>
+          <Pressable onPress={() => { setMode(mode === "signIn" ? "signUp" : "signIn"); setError(""); }} style={{ alignSelf: "center", padding: 12, marginTop: 5 }}>
+            <Text style={{ color: COLORS.blue, fontWeight: "600", fontSize: 14 }}>{mode === "signIn" ? "New here? Create an account" : "Already have an account? Sign in"}</Text>
+          </Pressable>
+        </View>
+      </View>
+      <View accessibilityLabel="Page 4 of 4" style={{ height: 17, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 }}>
+        {[0, 1, 2, 3].map((index) => <View key={index} style={{ width: index === 3 ? 23 : 6, height: 6, borderRadius: 4, backgroundColor: index === 3 ? "#FFD765" : "#FFFFFF55" }} />)}
       </View>
     </View>
   </SafeAreaView>;
@@ -250,6 +347,8 @@ function NotesExperience({
   useEffect(() => { setDarkMode(initialDarkMode); }, [initialDarkMode]);
   const editorTranslateX = useRef(new Animated.Value(screenWidth)).current;
   const headerProgress = useRef(new Animated.Value(0)).current;
+  const homeScrollRef = useRef<ScrollView>(null);
+  const previousActiveIdRef = useRef<string | null>(null);
   const nativeHeaderCollapsedRef = useRef(false);
   const lastNativeScrollOffsetRef = useRef(0);
   const headerHeight = headerProgress.interpolate({
@@ -268,6 +367,10 @@ function NotesExperience({
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [remoteEditorSyncSignal, setRemoteEditorSyncSignal] = useState(0);
+  const localEditRef = useRef<{ noteId: string; version: number } | null>(null);
+  const editVersionRef = useRef(0);
+  const observedActiveNoteRef = useRef<{ id: string; title: string; body: string; updatedAt: number } | null>(null);
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     const matches = notes.filter((note) => !query || `${note.title} ${note.body}`.toLowerCase().includes(query));
@@ -276,6 +379,17 @@ function NotesExperience({
       recent: matches.filter((note) => !note.pinned).sort((a, b) => b.updatedAt - a.updatedAt),
     };
   }, [notes, search]);
+
+  useEffect(() => {
+    const activeId = active?._id ?? null;
+    if (previousActiveIdRef.current && !activeId) {
+      nativeHeaderCollapsedRef.current = false;
+      lastNativeScrollOffsetRef.current = 0;
+      headerProgress.setValue(0);
+      homeScrollRef.current?.scrollTo({ x: 0, y: 0, animated: false });
+    }
+    previousActiveIdRef.current = activeId;
+  }, [active?._id, headerProgress]);
 
   useEffect(() => {
     if (Platform.OS === "web") return;
@@ -287,17 +401,49 @@ function NotesExperience({
   }, []);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active) {
+      observedActiveNoteRef.current = null;
+      setSaving(false);
+      return;
+    }
+    const latest = notes.find((note) => note._id === active._id);
+    if (!latest) return;
+    const observed = observedActiveNoteRef.current;
+    if (observed?.id !== active._id) {
+      observedActiveNoteRef.current = { id: latest._id, title: latest.title, body: latest.body, updatedAt: latest.updatedAt };
+      return;
+    }
+    const hasIncomingChange = observed.title !== latest.title || observed.body !== latest.body || observed.updatedAt !== latest.updatedAt;
+    if (!hasIncomingChange) return;
+    observedActiveNoteRef.current = { id: latest._id, title: latest.title, body: latest.body, updatedAt: latest.updatedAt };
+    const edit = localEditRef.current;
+    if (edit?.noteId === active._id) return;
+    if (latest.title === active.title && latest.body === active.body) return;
+    if (latest.body !== active.body) setRemoteEditorSyncSignal((signal) => signal + 1);
+    setActive((current) => current?._id === latest._id ? { ...current, ...latest } : current);
+  }, [active, notes]);
+
+  useEffect(() => {
+    if (!active || localEditRef.current?.noteId !== active._id) return;
+    const version = localEditRef.current.version;
     setSaving(true);
     const timer = setTimeout(() => {
       Promise.resolve(save(active))
+        .then(() => {
+          if (localEditRef.current?.noteId === active._id && localEditRef.current.version === version) localEditRef.current = null;
+        })
         .catch(() => Alert.alert("Couldn’t save this note", "Your changes are still here. Check your connection and try again."))
         .finally(() => setSaving(false));
     }, 550);
     return () => clearTimeout(timer);
   }, [active?.title, active?.body]);
 
-  const updateActive = (part: Partial<Note>) => setActive((note) => note ? { ...note, ...part, updatedAt: Date.now() } : note);
+  const updateActive = (part: Partial<Note>) => {
+    if (active && ((part.title !== undefined && part.title !== active.title) || (part.body !== undefined && part.body !== active.body))) {
+      localEditRef.current = { noteId: active._id, version: ++editVersionRef.current };
+    }
+    setActive((note) => note ? { ...note, ...part, updatedAt: Date.now() } : note);
+  };
   const createNote = async () => {
     setBusy(true);
     try { setActive(await create()); } catch { Alert.alert("Couldn’t create a note", "Check your connection and try again."); }
@@ -444,7 +590,7 @@ function NotesExperience({
         height: headerHeight,
       }]}>
         <Animated.View style={[styles.brandLine, { marginBottom: headerCollapse.interpolate({ inputRange: [0, 1], outputRange: [31, 0] }) }]}>
-          <View style={styles.brandMark}><View style={styles.brandMarkInner} /></View><Text style={styles.brand}>noted</Text><View style={styles.brandDot} />
+          <OnboardingBrand />
         </Animated.View>
         <Animated.View style={{
           height: heroHeight,
@@ -462,6 +608,7 @@ function NotesExperience({
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={[styles.homeBody, { backgroundColor: palette.background }]}>
       <Animated.ScrollView
+        ref={homeScrollRef}
         style={[styles.notesScroll, { backgroundColor: palette.background }]}
         contentContainerStyle={[styles.listContent, { paddingTop: insets.top + 162 + 25 }]}
         keyboardShouldPersistTaps="handled"
@@ -522,7 +669,7 @@ function NotesExperience({
 
   const editorScreen = <>
     <StatusBar style={darkMode ? "light" : "dark"} />
-    <Editor note={active} saving={saving} onChange={updateActive} onClose={closeEditor} onDelete={deleteNote} darkMode={darkMode} aiAssist={aiAssist} />
+    <Editor note={active} saving={saving} remoteSyncSignal={remoteEditorSyncSignal} keyboardVisible={keyboardVisible} onChange={updateActive} onClose={closeEditor} onDelete={deleteNote} darkMode={darkMode} aiAssist={aiAssist} />
     <DeleteConfirmation note={deleteTarget} error={deleteError} deleting={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} darkMode={darkMode} />
   </>;
   const translatedEditor = (
@@ -724,7 +871,7 @@ function PinIcon({ color, size = 18 }: { color: string; size?: number }) {
   </Svg>;
 }
 
-function Editor({ note, saving, onChange, onClose, onDelete, darkMode, aiAssist }: { note: Note; saving: boolean; onChange: (part: Partial<Note>) => void; onClose: (latestBody?: string) => void; onDelete: () => void; darkMode: boolean; aiAssist?: (action: NoteAIAction, title: string, body: string) => Promise<string> }) {
+function Editor({ note, saving, remoteSyncSignal, keyboardVisible, onChange, onClose, onDelete, darkMode, aiAssist }: { note: Note; saving: boolean; remoteSyncSignal: number; keyboardVisible: boolean; onChange: (part: Partial<Note>) => void; onClose: (latestBody?: string) => void; onDelete: () => void; darkMode: boolean; aiAssist?: (action: NoteAIAction, title: string, body: string) => Promise<string> }) {
   const insets = useSafeAreaInsets();
   const palette = darkMode ? DARK_COLORS : COLORS;
   const [flushSignal, setFlushSignal] = useState(0);
@@ -735,6 +882,58 @@ function Editor({ note, saving, onChange, onClose, onDelete, darkMode, aiAssist 
   const [aiResult, setAiResult] = useState("");
   const [aiError, setAiError] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
+  const [nativeReminderTarget, setNativeReminderTarget] = useState<{ taskId: string; task: string } | null>(null);
+  const [nativeReminderDate, setNativeReminderDate] = useState(() => new Date(Date.now() + 60 * 60 * 1000));
+  const nativeReminderResolver = useRef<((remindAt: number | null) => void) | null>(null);
+
+  useEffect(() => () => { nativeReminderResolver.current?.(null); nativeReminderResolver.current = null; }, []);
+
+  const openNativeTaskReminder = ({ taskId, task, remindAt }: { taskId: string; task: string; remindAt: number }) => {
+    Keyboard.dismiss();
+    const initialDate = remindAt > Date.now() ? new Date(remindAt) : new Date(Date.now() + 60 * 60 * 1000);
+    if (Platform.OS === "android") {
+      return new Promise<number | null>((resolve) => {
+        DateTimePickerAndroid.open({
+          value: initialDate,
+          mode: "date",
+          display: "calendar",
+          minimumDate: new Date(),
+          onChange: (event, selectedDate) => {
+            if (event.type !== "set" || !selectedDate) { resolve(null); return; }
+            DateTimePickerAndroid.open({
+              value: selectedDate,
+              mode: "time",
+              display: "clock",
+              onChange: (timeEvent, selectedTime) => {
+                if (timeEvent.type !== "set" || !selectedTime) { resolve(null); return; }
+                selectedDate.setHours(selectedTime.getHours(), selectedTime.getMinutes(), 0, 0);
+                resolve(selectedDate.getTime());
+              },
+            });
+          },
+        });
+      });
+    }
+    if (nativeReminderResolver.current) return Promise.resolve(null);
+    setNativeReminderDate(initialDate);
+    setNativeReminderTarget({ taskId, task });
+    return new Promise<number | null>((resolve) => { nativeReminderResolver.current = resolve; });
+  };
+
+  const closeNativeTaskReminder = (remindAt: number | null) => {
+    const resolve = nativeReminderResolver.current;
+    nativeReminderResolver.current = null;
+    setNativeReminderTarget(null);
+    resolve?.(remindAt);
+  };
+
+  const confirmNativeTaskReminder = () => {
+    if (nativeReminderDate.getTime() <= Date.now()) {
+      Alert.alert("Choose a future time", "The reminder time needs to be later than now.");
+      return;
+    }
+    closeNativeTaskReminder(nativeReminderDate.getTime());
+  };
 
   const runAIAssist = async (action: NoteAIAction) => {
     if (!aiAssist || aiLoading) return;
@@ -789,10 +988,25 @@ function Editor({ note, saving, onChange, onClose, onDelete, darkMode, aiAssist 
         <View style={[styles.editorRule, darkMode && { backgroundColor: palette.line }]}><View style={styles.editorRuleAccent} /></View>
       </View>
       <View style={{ flex: 1, minHeight: 0, width: "100%", backgroundColor: palette.background }}>
-        <RichNoteEditor noteId={note._id} markdown={note.body} replaceSignal={replaceSignal} flushSignal={flushSignal} safeBottom={insets.bottom} darkMode={darkMode} onChange={async (body) => onChange({ body })} onFinish={async (body) => onClose(body)} onReady={() => setEditorLoaded(true)} dom={{ style: { flex: 1, width: "100%", backgroundColor: palette.background } }} />
+        <RichNoteEditor noteId={note._id} markdown={note.body} replaceSignal={replaceSignal + remoteSyncSignal} flushSignal={flushSignal} safeBottom={insets.bottom} darkMode={darkMode} keyboardVisible={keyboardVisible} taskRemindersEnabled={Platform.OS !== "web"} openTaskReminder={openNativeTaskReminder} scheduleTaskReminder={({ taskId, task, remindAt, requestPermission }) => scheduleTaskNotification(note._id, taskId, task, remindAt, requestPermission).catch((error) => { Alert.alert("Couldn’t set the reminder", "Allow Alerts and Lock Screen notifications for the app in iPhone Settings. While developing in Expo Go, check Settings → Notifications → Expo Go.", [{ text: "Not now", style: "cancel" }, { text: "Open Settings", onPress: () => { void Linking.openSettings(); } }]); throw error; })} cancelTaskReminder={(taskId) => cancelTaskNotification(note._id, taskId)} onChange={async (body) => onChange({ body })} onFinish={async (body) => onClose(body)} onReady={() => setEditorLoaded(true)} dom={{ style: { flex: 1, width: "100%", backgroundColor: palette.background } }} />
         {!editorLoaded && <View pointerEvents="none" style={[styles.editorLoading, { backgroundColor: palette.background }]}><ActivityIndicator size="large" color={COLORS.blue} /></View>}
       </View>
     </KeyboardAvoidingView>
+    {Platform.OS === "ios" && <Modal transparent visible={!!nativeReminderTarget} animationType="fade" statusBarTranslucent onRequestClose={() => closeNativeTaskReminder(null)}>
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 22, backgroundColor: "#08163388" }}>
+        <Pressable onPress={() => closeNativeTaskReminder(null)} style={StyleSheet.absoluteFill} accessibilityLabel="Dismiss reminder picker" />
+        <View style={{ width: "100%", maxWidth: 410, padding: 22, borderRadius: 26, backgroundColor: palette.surface, shadowColor: "#07152F", shadowOpacity: 0.24, shadowRadius: 24, shadowOffset: { width: 0, height: 12 } }}>
+          <Text style={{ color: COLORS.blue, fontSize: 10, fontWeight: "800", letterSpacing: 1.5 }}>TASK REMINDER</Text>
+          <Text style={{ marginTop: 8, color: palette.ink, fontFamily: "serif", fontSize: 25, fontWeight: "700" }}>Choose a time</Text>
+          <Text numberOfLines={2} style={{ marginTop: 5, marginBottom: 10, color: palette.muted, fontSize: 14, lineHeight: 20 }}>{nativeReminderTarget?.task}</Text>
+          <DateTimePicker value={nativeReminderDate} mode="datetime" display="spinner" minimumDate={new Date()} accentColor={COLORS.blue} textColor={palette.ink} themeVariant={darkMode ? "dark" : "light"} onChange={(_, selectedDate) => { if (selectedDate) setNativeReminderDate(selectedDate); }} />
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+            <Pressable onPress={() => closeNativeTaskReminder(null)} style={{ flex: 1, height: 48, borderRadius: 14, borderWidth: 1, borderColor: palette.line, alignItems: "center", justifyContent: "center" }}><Text style={{ color: palette.ink, fontWeight: "700" }}>Cancel</Text></Pressable>
+            <Pressable onPress={confirmNativeTaskReminder} style={{ flex: 1, height: 48, borderRadius: 14, backgroundColor: COLORS.blue, alignItems: "center", justifyContent: "center" }}><Text style={{ color: "white", fontWeight: "700" }}>Set reminder</Text></Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>}
     {aiAssist && <Modal transparent visible={aiOpen} animationType="fade" onRequestClose={() => setAiOpen(false)} statusBarTranslucent>
       <View style={styles.aiOverlay}>
         <Pressable style={StyleSheet.absoluteFill} onPress={() => setAiOpen(false)} accessibilityLabel="Close writing assistant" />
