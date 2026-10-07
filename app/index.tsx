@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useAuthActions, useConvexAuth } from "@convex-dev/auth/react";
 import { anyApi } from "convex/server";
 import { useMutation, useQuery } from "convex/react";
 import { StatusBar } from "expo-status-bar";
@@ -23,6 +24,7 @@ type Note = {
 
 const api: any = anyApi;
 const STORAGE_KEY = "noted.notes.v1";
+const THEME_STORAGE_KEY = "noted.theme.mode";
 const COLORS = {
   blue: "#1749E8", blueDark: "#1038C5", ink: "#101D38", muted: "#75829C",
   line: "#E5EAF3", surface: "#FFFFFF", background: "#F8FAFE", pale: "#EAF0FF", yellow: "#FFD765",
@@ -44,6 +46,8 @@ const starterNotes: Note[] = [
 function LocalNotesApp() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [ready, setReady] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+  const [themeReady, setThemeReady] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then((saved) => {
@@ -53,10 +57,20 @@ function LocalNotesApp() {
   }, []);
 
   useEffect(() => {
+    AsyncStorage.getItem(THEME_STORAGE_KEY).then((saved) => {
+      setDarkMode(saved === "dark");
+      setThemeReady(true);
+    }).catch(() => setThemeReady(true));
+  }, []);
+
+  useEffect(() => {
     if (ready) AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(notes)).catch(() => undefined);
   }, [notes, ready]);
 
-  return <NotesExperience notes={notes}
+  return <NotesExperience notes={notes} initialDarkMode={darkMode} onThemeChange={(dark) => {
+      setDarkMode(dark);
+      void AsyncStorage.setItem(THEME_STORAGE_KEY, dark ? "dark" : "light").catch(() => undefined);
+    }}
     create={async () => ({ _id: `local-${Date.now()}`, title: "", body: "", pinned: false, createdAt: Date.now(), updatedAt: Date.now() })}
     save={(note) => setNotes((old) => {
       const updated = { ...note, updatedAt: Date.now() };
@@ -66,16 +80,18 @@ function LocalNotesApp() {
     })}
     togglePin={(id) => setNotes((old) => old.map((item) => item._id === id ? { ...item, pinned: !item.pinned, updatedAt: Date.now() } : item))}
     remove={(id) => setNotes((old) => old.filter((item) => item._id !== id))}
-    loading={!ready} />;
+    loading={!ready || !themeReady} />;
 }
 
-function ConnectedNotesApp() {
+function ConnectedNotesApp({ user }: { user: any }) {
   const notes = useQuery(api.notes.list) as Note[] | undefined;
   const createMutation = useMutation(api.notes.create);
   const updateMutation = useMutation(api.notes.update);
   const pinMutation = useMutation(api.notes.togglePin);
   const removeMutation = useMutation(api.notes.remove);
-  const importLocalMutation = useMutation(api.notes.importLocal);
+  const initializeUserNotes = useMutation(api.notes.initializeUserNotes);
+  const setTheme = useMutation(api.notes.setTheme);
+  const { signOut } = useAuthActions();
   const [syncReady, setSyncReady] = useState(false);
   const migrationAttempted = useRef(false);
   useEffect(() => {
@@ -83,28 +99,20 @@ function ConnectedNotesApp() {
     migrationAttempted.current = true;
     void (async () => {
       const migrationKey = `${STORAGE_KEY}.convex-imported.${process.env.EXPO_PUBLIC_CONVEX_URL}`;
-      const imported = await AsyncStorage.getItem(migrationKey);
-      if (imported) { setSyncReady(true); return; }
-      if (notes.length > 0) {
-        await AsyncStorage.setItem(migrationKey, "done");
-        setSyncReady(true);
-        return;
-      }
+      const alreadyMigrated = await AsyncStorage.getItem(migrationKey);
       const saved = await AsyncStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const localNotes = JSON.parse(saved) as Note[];
-        if (localNotes.length > 0) {
-          await importLocalMutation({ notes: localNotes.map(({ title, body, pinned, createdAt, updatedAt }) => ({ title, body, pinned, createdAt, updatedAt })) });
-        }
-      }
+      const localNotes = !alreadyMigrated && saved ? JSON.parse(saved) as Note[] : [];
+      await initializeUserNotes({ notes: localNotes.map(({ title, body, pinned, createdAt, updatedAt }) => ({ title, body, pinned, createdAt, updatedAt })) });
       await AsyncStorage.setItem(migrationKey, "done");
       setSyncReady(true);
     })().catch((error) => {
       console.error("Could not sync existing local notes to Convex", error);
       setSyncReady(true);
     });
-  }, [notes, importLocalMutation]);
-  return <NotesExperience notes={notes ?? []}
+  }, [notes, initializeUserNotes]);
+  return <NotesExperience notes={notes ?? []} initialDarkMode={user?.theme === "dark"}
+    onThemeChange={(dark) => { void setTheme({ theme: dark ? "dark" : "light" }); }}
+    onSignOut={() => { void signOut(); }}
     create={async () => {
       const id = await createMutation({ title: "", body: "" });
       return { _id: String(id), title: "", body: "", pinned: false, createdAt: Date.now(), updatedAt: Date.now() };
@@ -115,12 +123,84 @@ function ConnectedNotesApp() {
     loading={notes === undefined || !syncReady} />;
 }
 
-export default function Index() {
-  return process.env.EXPO_PUBLIC_CONVEX_URL ? <ConnectedNotesApp /> : <LocalNotesApp />;
+function CloudAuthGate() {
+  const { isLoading, isAuthenticated } = useConvexAuth();
+  const user = useQuery(api.notes.currentUser, isAuthenticated ? {} : "skip");
+  if (isLoading || (isAuthenticated && user === undefined)) return <AuthLoading />;
+  if (!isAuthenticated) return <AuthScreen />;
+  return <ConnectedNotesApp user={user} />;
 }
 
+export default function Index() {
+  return process.env.EXPO_PUBLIC_CONVEX_URL ? <CloudAuthGate /> : <LocalNotesApp />;
+}
+
+function AuthLoading() {
+  return <View style={{ flex: 1, backgroundColor: COLORS.blue, alignItems: "center", justifyContent: "center" }}>
+    <ActivityIndicator color="white" size="large" />
+    <Text style={{ color: "#E2EAFF", fontSize: 14, marginTop: 16 }}>Getting your space ready…</Text>
+  </View>;
+}
+
+function AuthScreen() {
+  const { signIn } = useAuthActions();
+  const [mode, setMode] = useState<"signIn" | "signUp">("signIn");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const submit = async () => {
+    if (submitting) return;
+    setError("");
+    setSubmitting(true);
+    try {
+      await signIn("password", { email: email.trim(), password, flow: mode });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Couldn’t sign you in. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  return <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.blue }}>
+    <StatusBar style="light" />
+    <View style={{ flex: 1, justifyContent: "center", paddingHorizontal: 26, paddingVertical: 28 }}>
+      <View style={{ marginBottom: 28 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 28 }}>
+          <View style={styles.brandMark}><View style={styles.brandMarkInner} /></View>
+          <Text style={styles.brand}>noted</Text><View style={styles.brandDot} />
+        </View>
+        <Text style={{ color: "white", fontSize: 38, lineHeight: 43, fontWeight: "800", letterSpacing: -1.2 }}>
+          Your thoughts,{"\n"}wherever you are.
+        </Text>
+        <Text style={{ color: "#D9E4FF", fontSize: 15, lineHeight: 22, marginTop: 12 }}>
+          Sign in to keep your notes and app mode in sync.
+        </Text>
+      </View>
+      <View style={{ backgroundColor: "white", borderRadius: 26, padding: 22, shadowColor: "#091D69", shadowOpacity: 0.22, shadowRadius: 22, shadowOffset: { width: 0, height: 10 }, elevation: 10 }}>
+        <Text style={{ color: COLORS.ink, fontSize: 25, lineHeight: 31, fontFamily: "serif", fontWeight: "600", marginBottom: 5 }}>
+          {mode === "signIn" ? "Welcome back" : "Make it yours"}
+        </Text>
+        <Text style={{ color: COLORS.muted, fontSize: 14, lineHeight: 20, marginBottom: 17 }}>
+          {mode === "signIn" ? "Pick up right where you left off." : "Create an account to sync your notes."}
+        </Text>
+        <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" placeholder="Email address" placeholderTextColor="#98A3B6" style={authInputStyle} accessibilityLabel="Email address" />
+        <TextInput value={password} onChangeText={setPassword} secureTextEntry autoComplete={mode === "signUp" ? "new-password" : "password"} placeholder="Password" placeholderTextColor="#98A3B6" style={[authInputStyle, { marginTop: 11 }]} accessibilityLabel="Password" onSubmitEditing={() => void submit()} />
+        {!!error && <Text style={{ color: "#B92E3A", fontSize: 13, lineHeight: 18, marginTop: 11 }}>{error}</Text>}
+        <Pressable onPress={() => void submit()} disabled={submitting} style={({ pressed }) => [{ height: 52, marginTop: 17, borderRadius: 17, backgroundColor: COLORS.blue, alignItems: "center", justifyContent: "center" }, pressed && styles.pressed, submitting && { opacity: 0.7 }]}>
+          {submitting ? <ActivityIndicator color="white" /> : <Text style={{ color: "white", fontWeight: "700", fontSize: 15 }}>{mode === "signIn" ? "Sign in" : "Create account"}</Text>}
+        </Pressable>
+        <Pressable onPress={() => { setMode(mode === "signIn" ? "signUp" : "signIn"); setError(""); }} style={{ alignSelf: "center", padding: 12, marginTop: 5 }}>
+          <Text style={{ color: COLORS.blue, fontWeight: "600", fontSize: 14 }}>{mode === "signIn" ? "New here? Create an account" : "Already have an account? Sign in"}</Text>
+        </Pressable>
+      </View>
+    </View>
+  </SafeAreaView>;
+}
+
+const authInputStyle = { height: 52, borderRadius: 15, borderWidth: 1, borderColor: "#E1E7F0", paddingHorizontal: 15, fontSize: 15, color: COLORS.ink, backgroundColor: "#FBFCFE" } as const;
+
 function NotesExperience({
-  notes, create, save, togglePin, remove, loading,
+  notes, create, save, togglePin, remove, loading, initialDarkMode = false, onThemeChange, onSignOut,
 }: {
   notes: Note[];
   create: () => Promise<Note>;
@@ -128,16 +208,20 @@ function NotesExperience({
   togglePin: (id: string) => void | Promise<unknown>;
   remove: (id: string) => void | Promise<unknown>;
   loading: boolean;
+  initialDarkMode?: boolean;
+  onThemeChange?: (darkMode: boolean) => void;
+  onSignOut?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(initialDarkMode);
   const palette = darkMode ? DARK_COLORS : COLORS;
   const [themeReveal, setThemeReveal] = useState<{ visible: boolean; dark: boolean; x: number; y: number }>({ visible: false, dark: false, x: 0, y: 0 });
   const themeRevealProgress = useRef(new Animated.Value(0)).current;
   const themeRevealRunning = useRef(false);
   const themeRevealDiameter = Math.ceil(Math.hypot(screenWidth, screenHeight) * 2);
   const themeRevealScale = themeRevealProgress;
+  useEffect(() => { setDarkMode(initialDarkMode); }, [initialDarkMode]);
   const editorTranslateX = useRef(new Animated.Value(screenWidth)).current;
   const headerProgress = useRef(new Animated.Value(0)).current;
   const nativeHeaderCollapsedRef = useRef(false);
@@ -282,7 +366,10 @@ function NotesExperience({
     themeRevealProgress.setValue(0);
     setThemeReveal({ visible: true, dark: nextDark, x, y });
     Animated.timing(themeRevealProgress, { toValue: 1, duration: 520, useNativeDriver: true }).start(({ finished }) => {
-      if (finished) setDarkMode(nextDark);
+      if (finished) {
+        setDarkMode(nextDark);
+        onThemeChange?.(nextDark);
+      }
       themeRevealProgress.setValue(0);
       setThemeReveal((current) => ({ ...current, visible: false }));
       themeRevealRunning.current = false;
@@ -398,6 +485,11 @@ function NotesExperience({
             : <Path d="M20.2 15.2A8.5 8.5 0 0 1 8.8 3.8 8.6 8.6 0 1 0 20.2 15.2Z" stroke="white" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />}
         </Svg>
       </Pressable>
+      {onSignOut && <Pressable onPress={onSignOut} accessibilityRole="button" accessibilityLabel="Sign out" style={[styles.signOutToggle, { top: insets.top + 8 }]}>
+        <Svg width={21} height={21} viewBox="0 0 24 24" fill="none">
+          <Path d="M10 5H6.5A1.5 1.5 0 0 0 5 6.5v11A1.5 1.5 0 0 0 6.5 19H10M14 8l4 4-4 4m4-4H9" stroke="white" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+        </Svg>
+      </Pressable>}
     </SafeAreaView>
   );
   if (!active) return homeScreen;
@@ -667,6 +759,7 @@ const styles = StyleSheet.create({
   notesScroll: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, overflow: "hidden", zIndex: 0 },
   homeHeader: { position: "absolute", top: 0, left: 0, right: 0, backgroundColor: COLORS.blue, paddingHorizontal: 25, paddingTop: 8, paddingBottom: 35, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, zIndex: 2, elevation: 2 },
   themeToggle: { position: "absolute", right: 22, width: 40, height: 40, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.12)", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)", zIndex: 101, elevation: 101 },
+  signOutToggle: { position: "absolute", right: 70, width: 40, height: 40, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.12)", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)", zIndex: 101, elevation: 101 },
   themeToggleRevealing: { backgroundColor: COLORS.blue, borderColor: "rgba(255,255,255,0.48)" },
   darkSurface: { backgroundColor: DARK_COLORS.surface }, darkBorder: { borderColor: "#303849" },
   brandLine: { flexDirection: "row", alignItems: "center", marginBottom: 31 },
