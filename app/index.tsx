@@ -255,7 +255,6 @@ function NotesExperience({
   });
   const headerCollapse = headerProgress;
   const heroHeight = headerProgress.interpolate({ inputRange: [0, 1], outputRange: [70, 0], extrapolate: "clamp" });
-  const headerActionTop = headerProgress.interpolate({ inputRange: [0, 1], outputRange: [insets.top + 8, insets.top + 1], extrapolate: "clamp" });
   const [search, setSearch] = useState("");
   const [active, setActive] = useState<Note | null>(null);
   const [actionMenu, setActionMenu] = useState<NoteActionMenu | null>(null);
@@ -501,14 +500,14 @@ function NotesExperience({
       <NoteActions menu={actionMenu} onCancel={() => setActionMenu(null)} onEdit={() => { if (actionMenu) setActive(actionMenu.note); setActionMenu(null); }} onPin={() => { if (actionMenu) handleTogglePin(actionMenu.note._id); setActionMenu(null); }} onDelete={() => { if (actionMenu) requestDelete(actionMenu.note); setActionMenu(null); }} darkMode={darkMode} />
       <DeleteConfirmation note={deleteTarget} error={deleteError} deleting={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} darkMode={darkMode} />
       {themeReveal.visible && <Animated.View pointerEvents="none" style={{ position: "absolute", zIndex: 1, width: themeRevealDiameter, height: themeRevealDiameter, left: themeReveal.x - themeRevealDiameter / 2, top: themeReveal.y - themeRevealDiameter / 2, borderRadius: themeRevealDiameter / 2, backgroundColor: themeReveal.dark ? DARK_COLORS.background : COLORS.background, transform: [{ scale: themeRevealScale }] }} />}
-      <Pressable onPress={toggleTheme} accessibilityRole="button" accessibilityLabel={darkMode ? "Switch to light mode" : "Switch to dark mode"} style={[styles.themeToggle, themeReveal.visible && styles.themeToggleRevealing, { top: headerActionTop }]}>
+      <Pressable onPress={toggleTheme} accessibilityRole="button" accessibilityLabel={darkMode ? "Switch to light mode" : "Switch to dark mode"} style={[styles.themeToggle, { top: insets.top + 8 }]}>
         <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
           {darkMode
             ? <Path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.64 5.64l1.42 1.42m9.88 9.88 1.42 1.42m0-12.72-1.42 1.42m-9.88 9.88-1.42 1.42M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z" stroke="white" strokeWidth={1.8} strokeLinecap="round" />
             : <Path d="M20.2 15.2A8.5 8.5 0 0 1 8.8 3.8 8.6 8.6 0 1 0 20.2 15.2Z" stroke="white" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />}
         </Svg>
       </Pressable>
-      {onSignOut && <Pressable onPress={onSignOut} accessibilityRole="button" accessibilityLabel="Sign out" style={[styles.signOutToggle, { top: headerActionTop }]}>
+      {onSignOut && <Pressable onPress={onSignOut} accessibilityRole="button" accessibilityLabel="Sign out" style={[styles.signOutToggle, { top: insets.top + 8 }]}>
         <Svg width={21} height={21} viewBox="0 0 24 24" fill="none">
           <Path d="M10 5H6.5A1.5 1.5 0 0 0 5 6.5v11A1.5 1.5 0 0 0 6.5 19H10M14 8l4 4-4 4m4-4H9" stroke="white" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
         </Svg>
@@ -781,9 +780,8 @@ const styles = StyleSheet.create({
   homeBody: { flex: 1, minHeight: 0, backgroundColor: COLORS.background },
   notesScroll: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, overflow: "hidden", zIndex: 0 },
   homeHeader: { position: "absolute", top: 0, left: 0, right: 0, backgroundColor: COLORS.blue, paddingHorizontal: 25, paddingTop: 8, paddingBottom: 35, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, zIndex: 2, elevation: 2 },
-  themeToggle: { position: "absolute", right: 22, width: 40, height: 40, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.12)", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)", zIndex: 101, elevation: 101 },
-  signOutToggle: { position: "absolute", right: 70, width: 40, height: 40, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.12)", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)", zIndex: 101, elevation: 101 },
-  themeToggleRevealing: { backgroundColor: COLORS.blue, borderColor: "rgba(255,255,255,0.48)" },
+  themeToggle: { position: "absolute", right: 22, width: 40, height: 40, alignItems: "center", justifyContent: "center", zIndex: 101, elevation: 101 },
+  signOutToggle: { position: "absolute", right: 70, width: 40, height: 40, alignItems: "center", justifyContent: "center", zIndex: 101, elevation: 101 },
   darkSurface: { backgroundColor: DARK_COLORS.surface }, darkBorder: { borderColor: "#303849" },
   brandLine: { flexDirection: "row", alignItems: "center", marginBottom: 31 },
   brandMark: { width: 23, height: 23, borderRadius: 8, backgroundColor: "white", justifyContent: "center", alignItems: "center", transform: [{ rotate: "-8deg" }] },
