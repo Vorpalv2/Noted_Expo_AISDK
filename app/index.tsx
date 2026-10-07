@@ -156,7 +156,7 @@ function AuthScreen() {
     try {
       await signIn("password", { email: email.trim(), password, flow: mode });
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Couldn’t sign you in. Try again.");
+      setError(authErrorMessage(reason, mode));
     } finally {
       setSubmitting(false);
     }
@@ -195,6 +195,28 @@ function AuthScreen() {
       </View>
     </View>
   </SafeAreaView>;
+}
+
+function authErrorMessage(reason: unknown, mode: "signIn" | "signUp") {
+  const detail = reason instanceof Error ? reason.message.toLowerCase() : String(reason).toLowerCase();
+  if (detail.includes("invalid credentials") || detail.includes("invalid password")) {
+    return mode === "signIn" ? "Email or password is incorrect." : "Choose a password with at least 8 characters.";
+  }
+  if (detail.includes("already exists") || detail.includes("already registered") || detail.includes("account exists")) {
+    return "An account with this email already exists. Try signing in.";
+  }
+  if (detail.includes("valid email") || detail.includes("invalid email")) {
+    return "Enter a valid email address.";
+  }
+  if (detail.includes("at least 8") || detail.includes("password must")) {
+    return "Choose a password with at least 8 characters.";
+  }
+  if (detail.includes("network") || detail.includes("fetch failed") || detail.includes("offline")) {
+    return "Can’t connect right now. Check your internet and try again.";
+  }
+  return mode === "signIn"
+    ? "Couldn’t sign in. Check your details and try again."
+    : "Couldn’t create your account. Please try again.";
 }
 
 const authInputStyle = { height: 52, borderRadius: 15, borderWidth: 1, borderColor: "#E1E7F0", paddingHorizontal: 15, fontSize: 15, color: COLORS.ink, backgroundColor: "#FBFCFE" } as const;
