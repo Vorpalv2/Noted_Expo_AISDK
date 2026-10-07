@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuthActions, useConvexAuth } from "@convex-dev/auth/react";
 import { anyApi } from "convex/server";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { StatusBar } from "expo-status-bar";
 import { Gesture, GestureDetector, Swipeable } from "react-native-gesture-handler";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -35,6 +35,7 @@ const DARK_COLORS = {
   background: "#080A0F", pale: "#1B2C50",
 };
 type NoteActionMenu = { note: Note; x: number; y: number };
+type NoteAIAction = "summarize" | "improve" | "title" | "tasks";
 
 const starterNotes: Note[] = [
   { _id: "sample-1", title: "A slower morning", body: "Leave the phone in the other room. Make coffee, open the windows, and give the day a few quiet minutes before it starts asking for things.", pinned: true, createdAt: Date.now() - 7200000, updatedAt: Date.now() - 7200000 },
@@ -89,6 +90,7 @@ function ConnectedNotesApp({ user }: { user: any }) {
   const updateMutation = useMutation(api.notes.update);
   const pinMutation = useMutation(api.notes.togglePin);
   const removeMutation = useMutation(api.notes.remove);
+  const assistWithAI = useAction(api.ai.actions.assist);
   const initializeUserNotes = useMutation(api.notes.initializeUserNotes);
   const setTheme = useMutation(api.notes.setTheme);
   const { signOut } = useAuthActions();
@@ -111,6 +113,7 @@ function ConnectedNotesApp({ user }: { user: any }) {
     });
   }, [notes, initializeUserNotes]);
   return <NotesExperience notes={notes ?? []} initialDarkMode={user?.theme === "dark"}
+    aiAssist={(action, title, body) => assistWithAI({ action, title, body })}
     onThemeChange={(dark) => { void setTheme({ theme: dark ? "dark" : "light" }); }}
     onSignOut={() => { void signOut(); }}
     create={async () => {
@@ -222,7 +225,7 @@ function authErrorMessage(reason: unknown, mode: "signIn" | "signUp") {
 const authInputStyle = { height: 52, borderRadius: 15, borderWidth: 1, borderColor: "#E1E7F0", paddingHorizontal: 15, fontSize: 15, color: COLORS.ink, backgroundColor: "#FBFCFE" } as const;
 
 function NotesExperience({
-  notes, create, save, togglePin, remove, loading, initialDarkMode = false, onThemeChange, onSignOut,
+  notes, create, save, togglePin, remove, loading, initialDarkMode = false, onThemeChange, onSignOut, aiAssist,
 }: {
   notes: Note[];
   create: () => Promise<Note>;
@@ -233,6 +236,7 @@ function NotesExperience({
   initialDarkMode?: boolean;
   onThemeChange?: (darkMode: boolean) => void;
   onSignOut?: () => void;
+  aiAssist?: (action: NoteAIAction, title: string, body: string) => Promise<string>;
 }) {
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -518,7 +522,7 @@ function NotesExperience({
 
   const editorScreen = <>
     <StatusBar style={darkMode ? "light" : "dark"} />
-    <Editor note={active} saving={saving} onChange={updateActive} onClose={closeEditor} onDelete={deleteNote} darkMode={darkMode} />
+    <Editor note={active} saving={saving} onChange={updateActive} onClose={closeEditor} onDelete={deleteNote} darkMode={darkMode} aiAssist={aiAssist} />
     <DeleteConfirmation note={deleteTarget} error={deleteError} deleting={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} darkMode={darkMode} />
   </>;
   const translatedEditor = (
@@ -720,28 +724,121 @@ function PinIcon({ color, size = 18 }: { color: string; size?: number }) {
   </Svg>;
 }
 
-function Editor({ note, saving, onChange, onClose, onDelete, darkMode }: { note: Note; saving: boolean; onChange: (part: Partial<Note>) => void; onClose: (latestBody?: string) => void; onDelete: () => void; darkMode: boolean }) {
+function Editor({ note, saving, onChange, onClose, onDelete, darkMode, aiAssist }: { note: Note; saving: boolean; onChange: (part: Partial<Note>) => void; onClose: (latestBody?: string) => void; onDelete: () => void; darkMode: boolean; aiAssist?: (action: NoteAIAction, title: string, body: string) => Promise<string> }) {
   const insets = useSafeAreaInsets();
   const palette = darkMode ? DARK_COLORS : COLORS;
   const [flushSignal, setFlushSignal] = useState(0);
+  const [replaceSignal, setReplaceSignal] = useState(0);
   const [editorLoaded, setEditorLoaded] = useState(Platform.OS === "web");
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiAction, setAiAction] = useState<NoteAIAction | null>(null);
+  const [aiResult, setAiResult] = useState("");
+  const [aiError, setAiError] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+
+  const runAIAssist = async (action: NoteAIAction) => {
+    if (!aiAssist || aiLoading) return;
+    setAiAction(action);
+    setAiResult("");
+    setAiError("");
+    setAiLoading(true);
+    try {
+      setAiResult(await aiAssist(action, note.title, note.body));
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      if (message.includes("AI_SETUP_REQUIRED")) setAiError("AI needs a Gateway key added to the Convex deployment before it can help.");
+      else if (message.includes("NOTE_TOO_LONG")) setAiError("This note is too long to process. Try shortening it first.");
+      else if (message.includes("AUTH_REQUIRED")) setAiError("Sign in again to use the writing assistant.");
+      else setAiError("Couldn’t reach the writing assistant. Check your connection and try again.");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const applyAIResult = () => {
+    if (!aiAction || !aiResult) return;
+    if (aiAction === "title") {
+      onChange({ title: aiResult.replace(/^['"“”]|['"“”]$/g, "").trim() });
+    } else if (aiAction === "tasks") {
+      if (aiResult === "No clear tasks found.") return;
+      const existingBody = note.body.trimEnd();
+      const newBody = `${existingBody ? `${existingBody}\n\n` : ""}## Tasks\n\n${aiResult}`;
+      onChange({ body: newBody });
+      setReplaceSignal((signal) => signal + 1);
+    } else {
+      onChange({ body: aiResult });
+      setReplaceSignal((signal) => signal + 1);
+    }
+    setAiOpen(false);
+  };
+
   return <SafeAreaView style={[styles.safe, { backgroundColor: palette.background }]} edges={["top", "left", "right"]}>
     <KeyboardAvoidingView style={styles.editor} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={[styles.editorNav, darkMode && { borderBottomColor: palette.line }]}>
         <Pressable onPress={() => setFlushSignal((current) => current + 1)} style={styles.backButton} hitSlop={8}><Text style={styles.backArrow}>‹</Text><Text style={styles.backLabel}>All notes</Text></Pressable>
         <View style={styles.saveStatus}><View style={[styles.saveDot, saving && styles.saveDotBusy]} /><Text style={[styles.saveLabel, darkMode && { color: palette.muted }]}>{saving ? "Saving" : "Saved"}</Text></View>
-        <Pressable onPress={onDelete} hitSlop={12} style={styles.moreButton}><Text style={[styles.moreGlyph, darkMode && { color: palette.muted }]}>···</Text></Pressable>
+        <View style={styles.editorActions}>
+          {aiAssist && <Pressable onPress={() => { setAiOpen(true); setAiAction(null); setAiResult(""); setAiError(""); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="AI writing assistant" style={({ pressed }) => [styles.aiOpenButton, pressed && styles.rowPressed]}>
+            <SparkleIcon color={darkMode ? "#AFC4FF" : COLORS.blue} />
+          </Pressable>}
+          <Pressable onPress={onDelete} hitSlop={12} style={styles.moreButton}><Text style={[styles.moreGlyph, darkMode && { color: palette.muted }]}>···</Text></Pressable>
+        </View>
       </View>
       <View style={{ paddingHorizontal: 25, paddingTop: 18 }}>
         <TextInput value={note.title} onChangeText={(title) => onChange({ title })} placeholder="Give this note a name" placeholderTextColor={darkMode ? "#7F8BA0" : "#A3AEC2"} style={[styles.titleInput, { color: palette.ink }]} multiline returnKeyType="next" blurOnSubmit={false} />
         <View style={[styles.editorRule, darkMode && { backgroundColor: palette.line }]}><View style={styles.editorRuleAccent} /></View>
       </View>
       <View style={{ flex: 1, minHeight: 0, width: "100%", backgroundColor: palette.background }}>
-        <RichNoteEditor noteId={note._id} markdown={note.body} flushSignal={flushSignal} safeBottom={insets.bottom} darkMode={darkMode} onChange={async (body) => onChange({ body })} onFinish={async (body) => onClose(body)} onReady={() => setEditorLoaded(true)} dom={{ style: { flex: 1, width: "100%", backgroundColor: palette.background } }} />
+        <RichNoteEditor noteId={note._id} markdown={note.body} replaceSignal={replaceSignal} flushSignal={flushSignal} safeBottom={insets.bottom} darkMode={darkMode} onChange={async (body) => onChange({ body })} onFinish={async (body) => onClose(body)} onReady={() => setEditorLoaded(true)} dom={{ style: { flex: 1, width: "100%", backgroundColor: palette.background } }} />
         {!editorLoaded && <View pointerEvents="none" style={[styles.editorLoading, { backgroundColor: palette.background }]}><ActivityIndicator size="large" color={COLORS.blue} /></View>}
       </View>
     </KeyboardAvoidingView>
+    {aiAssist && <Modal transparent visible={aiOpen} animationType="fade" onRequestClose={() => setAiOpen(false)} statusBarTranslucent>
+      <View style={styles.aiOverlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => setAiOpen(false)} accessibilityLabel="Close writing assistant" />
+        <View style={[styles.aiCard, { marginBottom: Math.max(24, insets.bottom + 12) }, darkMode && { backgroundColor: DARK_COLORS.surface, borderColor: "#343B49" }]}>
+          <View style={styles.aiHeading}>
+            <View style={styles.aiHeadingIcon}><SparkleIcon color={COLORS.blue} size={22} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.aiTitle, darkMode && { color: palette.ink }]}>Writing assistant</Text>
+              <Text style={[styles.aiSubtitle, darkMode && { color: palette.muted }]}>A little help with this note</Text>
+            </View>
+            <Pressable onPress={() => setAiOpen(false)} hitSlop={10} style={styles.aiClose}><Text style={[styles.aiCloseGlyph, darkMode && { color: palette.muted }]}>×</Text></Pressable>
+          </View>
+          {!aiAction ? <View style={{ gap: 9 }}>
+            {([
+              ["summarize", "Summarize", "Make the main ideas easier to scan."],
+              ["improve", "Improve writing", "Polish clarity while keeping your meaning."],
+              ["title", "Suggest a title", "Find a clear, fitting title."],
+              ["tasks", "Extract tasks", "Turn clear next steps into a checklist."],
+            ] as [NoteAIAction, string, string][]).map(([action, title, subtitle]) => <Pressable key={action} onPress={() => void runAIAssist(action)} disabled={aiLoading} style={({ pressed }) => [styles.aiOption, darkMode && { backgroundColor: DARK_COLORS.background, borderColor: "#343B49" }, pressed && styles.rowPressed]}>
+              <View style={{ flex: 1 }}><Text style={[styles.aiOptionTitle, darkMode && { color: palette.ink }]}>{title}</Text><Text style={[styles.aiOptionSubtitle, darkMode && { color: palette.muted }]}>{subtitle}</Text></View>
+              <Text style={styles.aiOptionArrow}>›</Text>
+            </Pressable>)}
+          </View> : aiLoading ? <View style={styles.aiLoading}><ActivityIndicator color={COLORS.blue} /><Text style={[styles.aiSubtitle, darkMode && { color: palette.muted }]}>Working on it…</Text></View>
+            : aiError ? <View style={[styles.aiResultBox, darkMode && { backgroundColor: DARK_COLORS.background }]}><Text style={[styles.aiError, darkMode && { color: "#FFB7B7" }]}>{aiError}</Text><Pressable onPress={() => { setAiAction(null); setAiError(""); }} style={styles.aiRetry}><Text style={styles.aiRetryText}>Try another action</Text></Pressable></View>
+              : <>
+                <Text style={[styles.aiResultLabel, darkMode && { color: palette.muted }]}>{aiAction === "title" ? "Suggested title" : aiAction === "tasks" ? "Suggested tasks" : aiAction === "improve" ? "Revised note" : "Summary"}</Text>
+                <ScrollView style={[styles.aiResultBox, darkMode && { backgroundColor: DARK_COLORS.background }]} contentContainerStyle={{ padding: 14 }} keyboardShouldPersistTaps="handled">
+                  <Text selectable style={[styles.aiResultText, darkMode && { color: palette.ink }]}>{aiResult}</Text>
+                </ScrollView>
+                <View style={styles.aiResultActions}>
+                  <Pressable onPress={() => { setAiAction(null); setAiResult(""); }} style={[styles.aiKeepButton, darkMode && { borderColor: "#343B49" }]}><Text style={[styles.aiKeepText, darkMode && { color: palette.ink }]}>Back</Text></Pressable>
+                  <Pressable onPress={applyAIResult} disabled={aiAction === "tasks" && aiResult === "No clear tasks found."} style={[styles.aiUseButton, aiAction === "tasks" && aiResult === "No clear tasks found." && { opacity: 0.5 }]}><Text style={styles.aiUseText}>{aiAction === "title" ? "Use title" : aiAction === "tasks" ? "Add tasks" : "Use suggestion"}</Text></Pressable>
+                </View>
+              </>}
+          <Text style={[styles.aiPrivacy, darkMode && { color: "#8692A8" }]}>Only this note is sent through AI Gateway.</Text>
+        </View>
+      </View>
+    </Modal>}
   </SafeAreaView>;
+}
+
+function SparkleIcon({ color, size = 21 }: { color: string; size?: number }) {
+  return <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path d="M12 2.8 14.1 9.9 21.2 12l-7.1 2.1-2.1 7.1-2.1-7.1L2.8 12l7.1-2.1L12 2.8Z" stroke={color} strokeWidth={1.7} strokeLinejoin="round" />
+    <Path d="m19 2 .7 2.3L22 5l-2.3.7L19 8l-.7-2.3L16 5l2.3-.7L19 2Z" fill={color} />
+  </Svg>;
 }
 
 function relativeTime(time: number) {
@@ -815,7 +912,8 @@ const styles = StyleSheet.create({
   emptyTitle: { color: "white", fontSize: 32, lineHeight: 36, fontWeight: "800", letterSpacing: -1, alignSelf: "center", textAlign: "center" }, emptyBody: { color: "#D8E3FF", textAlign: "center", fontSize: 13.5, lineHeight: 20, marginTop: 12, marginHorizontal: 13 }, emptyButton: { height: 51, borderRadius: 15, backgroundColor: "white", alignSelf: "stretch", marginTop: 25, alignItems: "center", justifyContent: "center", flexDirection: "row" }, emptyButtonText: { color: COLORS.blue, fontSize: 14, fontWeight: "700" }, emptyButtonArrow: { color: COLORS.blue, fontSize: 16, marginLeft: 10, marginTop: -2 },
   noResults: { alignItems: "center", paddingTop: 78 }, noResultsTitle: { color: COLORS.ink, fontWeight: "700", fontSize: 19 }, noResultsBody: { color: COLORS.muted, fontSize: 13, marginTop: 7 },
   loadingState: { alignItems: "center", paddingTop: 90 }, loadingText: { color: COLORS.muted, fontSize: 14 }, busyVeil: { position: "absolute", bottom: 94, alignSelf: "center", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: COLORS.ink }, busyText: { color: "white", fontSize: 12 },
-  editor: { flex: 1 }, editorLoading: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.background, zIndex: 2 }, editorNav: { height: 59, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 22, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line }, backButton: { flexDirection: "row", alignItems: "center", minWidth: 95 }, backArrow: { color: COLORS.blue, fontSize: 32, lineHeight: 34, marginRight: 4, fontWeight: "300", marginTop: -3 }, backLabel: { color: COLORS.blue, fontSize: 14, fontWeight: "600" }, saveStatus: { flexDirection: "row", alignItems: "center" }, saveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#63C9A1", marginRight: 6 }, saveDotBusy: { backgroundColor: COLORS.yellow }, saveLabel: { color: COLORS.muted, fontSize: 11 }, moreButton: { minWidth: 40, alignItems: "flex-end" }, moreGlyph: { fontSize: 23, color: COLORS.muted, letterSpacing: 1, marginTop: -12 },
+  editor: { flex: 1 }, editorLoading: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.background, zIndex: 2 }, editorNav: { height: 59, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 22, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line }, backButton: { flexDirection: "row", alignItems: "center", minWidth: 95 }, backArrow: { color: COLORS.blue, fontSize: 32, lineHeight: 34, marginRight: 4, fontWeight: "300", marginTop: -3 }, backLabel: { color: COLORS.blue, fontSize: 14, fontWeight: "600" }, saveStatus: { flexDirection: "row", alignItems: "center" }, saveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#63C9A1", marginRight: 6 }, saveDotBusy: { backgroundColor: COLORS.yellow }, saveLabel: { color: COLORS.muted, fontSize: 11 }, editorActions: { flexDirection: "row", alignItems: "center", gap: 11 }, aiOpenButton: { width: 38, height: 38, alignItems: "center", justifyContent: "center" }, moreButton: { minWidth: 28, alignItems: "flex-end" }, moreGlyph: { fontSize: 23, color: COLORS.muted, letterSpacing: 1, marginTop: -12 },
+  aiOverlay: { flex: 1, backgroundColor: "rgba(7, 16, 39, 0.4)", justifyContent: "flex-end", paddingHorizontal: 16 }, aiCard: { width: "100%", maxWidth: 520, maxHeight: "88%", alignSelf: "center", backgroundColor: "white", borderRadius: 27, borderWidth: 1, borderColor: "#E6EAF2", padding: 20, marginBottom: 24, shadowColor: "#061542", shadowOpacity: 0.22, shadowRadius: 24, shadowOffset: { width: 0, height: 10 }, elevation: 14 }, aiHeading: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 19 }, aiHeadingIcon: { width: 42, height: 42, borderRadius: 15, backgroundColor: COLORS.pale, alignItems: "center", justifyContent: "center" }, aiTitle: { color: COLORS.ink, fontSize: 22, lineHeight: 26, fontWeight: "700", letterSpacing: -0.45 }, aiSubtitle: { color: COLORS.muted, fontSize: 13, lineHeight: 18, marginTop: 3 }, aiClose: { width: 34, height: 34, alignItems: "center", justifyContent: "center" }, aiCloseGlyph: { color: COLORS.muted, fontSize: 29, lineHeight: 32, fontWeight: "300" }, aiOption: { minHeight: 61, flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: "#E6EAF2", borderRadius: 16, paddingHorizontal: 14, paddingVertical: 9, backgroundColor: "#FBFCFE" }, aiOptionTitle: { color: COLORS.ink, fontSize: 14, fontWeight: "700" }, aiOptionSubtitle: { color: COLORS.muted, fontSize: 11.5, lineHeight: 16, marginTop: 2 }, aiOptionArrow: { color: COLORS.blue, fontSize: 27, marginLeft: 12, marginTop: -3 }, aiLoading: { minHeight: 114, alignItems: "center", justifyContent: "center", gap: 11 }, aiPrivacy: { color: "#8995A8", fontSize: 11, lineHeight: 16, textAlign: "center", marginTop: 15 }, aiResultLabel: { color: COLORS.muted, fontSize: 12, fontWeight: "700", marginBottom: 7 }, aiResultBox: { maxHeight: 300, borderRadius: 16, backgroundColor: "#F4F6FA", overflow: "hidden" }, aiResultText: { color: COLORS.ink, fontSize: 14, lineHeight: 21 }, aiError: { color: "#A8323D", fontSize: 14, lineHeight: 21, padding: 14 }, aiRetry: { paddingHorizontal: 14, paddingBottom: 14 }, aiRetryText: { color: COLORS.blue, fontWeight: "700", fontSize: 13 }, aiResultActions: { flexDirection: "row", gap: 10, marginTop: 13 }, aiKeepButton: { flex: 1, height: 47, borderRadius: 15, borderWidth: 1, borderColor: COLORS.line, alignItems: "center", justifyContent: "center" }, aiKeepText: { color: COLORS.ink, fontSize: 14, fontWeight: "600" }, aiUseButton: { flex: 1.3, height: 47, borderRadius: 15, backgroundColor: COLORS.blue, alignItems: "center", justifyContent: "center" }, aiUseText: { color: "white", fontSize: 14, fontWeight: "700" },
   titleInput: { color: COLORS.ink, fontSize: 24, lineHeight: 30, fontWeight: "700", letterSpacing: -0.7, padding: 0, minHeight: 38 },
   editorRule: { height: 1, backgroundColor: COLORS.line, marginTop: 14, marginBottom: 13 }, editorRuleAccent: { width: 35, height: 2, backgroundColor: COLORS.blue, marginTop: -1 },
 

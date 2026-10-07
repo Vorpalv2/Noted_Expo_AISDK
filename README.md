@@ -17,8 +17,12 @@ Without a Convex URL, notes are saved on the device with AsyncStorage and a few 
 2. Copy the deployment URL into `.env.local` as `EXPO_PUBLIC_CONVEX_URL` (see `.env.example`).
 3. Restart Expo. Convex generates the typed backend files and syncs the notes schema and functions.
 
-## Privacy before deployment
+## AI writing assistant
 
-The current Convex functions are public and do not authenticate users. A connected deployment stores every user's notes in one shared collection, so this build is suitable for local development and UI exploration only. Add authentication and user ownership checks before using it for private notes or sharing the deployment.
+The editor's writing assistant uses Vercel AI SDK with AI Gateway. Create an AI Gateway API key, then add it as `AI_GATEWAY_API_KEY` in the environment variables for the Convex deployment (use the Convex dashboard's deployment settings). Keep the key on the Convex backend; never add it to Expo's `EXPO_PUBLIC_` variables.
+
+The assistant sends only the open note's title and body after the user chooses an action. It previews generated text before applying it. The note actions, prompts, and model call are in `convex/ai/`.
+
+The app requires a signed-in user for cloud notes. Notes are scoped to their owner in Convex.
 
 # Noted_Expo_AISDK

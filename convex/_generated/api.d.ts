@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as ai_actions from "../ai/actions.js";
+import type * as ai_prompts from "../ai/prompts.js";
 import type * as auth from "../auth.js";
 import type * as http from "../http.js";
 import type * as notes from "../notes.js";
@@ -19,6 +21,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "ai/actions": typeof ai_actions;
+  "ai/prompts": typeof ai_prompts;
   auth: typeof auth;
   http: typeof http;
   notes: typeof notes;

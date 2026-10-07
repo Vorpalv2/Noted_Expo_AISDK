@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 type Props = {
   noteId: string;
   markdown: string;
+  replaceSignal?: number;
   flushSignal: number;
   safeBottom?: number;
   darkMode?: boolean;
@@ -130,11 +131,12 @@ function ToolIcon({ name }: { name: ToolIconName }) {
   return <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24" {...shared}>{drawing}</svg>;
 }
 
-export default function RichNoteEditor({ noteId, markdown, flushSignal, safeBottom = 0, darkMode = false, onChange, onFinish, onReady }: Props) {
+export default function RichNoteEditor({ noteId, markdown, replaceSignal = 0, flushSignal, safeBottom = 0, darkMode = false, onChange, onFinish, onReady }: Props) {
   const editor = useRef<HTMLDivElement>(null);
   const savedRange = useRef<Range | null>(null);
   const loadedNote = useRef<string | null>(null);
   const lastFlushSignal = useRef(0);
+  const lastReplaceSignal = useRef(replaceSignal);
   const [tableOpen, setTableOpen] = useState(false);
   const [rows, setRows] = useState(3);
   const [columns, setColumns] = useState(3);
@@ -152,6 +154,12 @@ export default function RichNoteEditor({ noteId, markdown, flushSignal, safeBott
     editor.current.innerHTML = markdownToHtml(markdown);
     onReady();
   }, [noteId, markdown, onReady]);
+
+  useEffect(() => {
+    if (replaceSignal === lastReplaceSignal.current) return;
+    lastReplaceSignal.current = replaceSignal;
+    if (editor.current) editor.current.innerHTML = markdownToHtml(markdown);
+  }, [replaceSignal, markdown]);
 
   useEffect(() => {
     if (flushSignal <= lastFlushSignal.current) return;
